@@ -1,0 +1,29 @@
+opam-version: "2.0"
+version:"0.0.1"
+maintainer:   ["julien@adlink-labs.tech"]
+authors:      ["Angelo Corsaro" "Gabriele Baldoni" "Julien Enoch"]
+homepage:     "https://github.com/atolab/yaks-ocaml"
+bug-reports:  "https://github.com/atolab/yaks-ocaml/issues/"
+dev-repo:     "git://github.com/atolab/yaks-ocaml.git"
+
+license: "Apache-2.0"
+
+build: [
+  ["jbuilder" "build" "--only" "yaks-ocaml" "--root" "." "-j" jobs "@install"]
+]
+
+
+depends: [
+  "dune"
+  "fmt" 
+  "logs" 
+  "lwt" 
+  "ppx_deriving" 
+  "lwt_ppx"
+  "apero-core" {>= "0.3.0"}
+  "yaks-common" {>= "0.0.1"}
+]
+
+synopsis : "YAKS OCaml API"
+description: """
+The YAKS API binding for OCaml."""
