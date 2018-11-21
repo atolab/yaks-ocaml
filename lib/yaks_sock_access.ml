@@ -46,7 +46,7 @@ module Access = struct
 
   let put path value access =
     MVar.read access >>= fun access ->
-    let _ = ignore @@ Logs_lwt.info (fun m -> m "[YA]: PUT on %s -> %s" (Path.to_string path) (Value.to_string value)) in
+    let _ = Logs_lwt.info (fun m -> m "[YA]: PUT on %s -> %s" (Path.to_string path) (Value.to_string value)) in
     Yaks_sock_driver.process_put path access.aid value access.driver
 
   let delta_put path value access = 
@@ -54,10 +54,10 @@ module Access = struct
     let _ = Logs_lwt.info (fun m -> m "[YA]: DELTA_PUT on %s -> %s" (Path.to_string path) (Value.to_string value)) in
     Yaks_sock_driver.process_patch path access.aid value access.driver
 
-  let remove selector access =
+  let remove path access =
     MVar.read access >>= fun access ->
-    let _ = Logs_lwt.info (fun m -> m "[YA]: REMOVE on %s" (Selector.to_string selector)) in
-    Yaks_sock_driver.process_remove ~delete_type:`Resource  ~selector (IdAccess access.aid)  access.driver
+    let _ = Logs_lwt.info (fun m -> m "[YA]: REMOVE on %s" (Path.to_string path)) in
+    Yaks_sock_driver.process_remove ~delete_type:`Resource  ~path (IdAccess access.aid)  access.driver
 
 
   let subscribe ?(listener=(fun _ -> Lwt.return_unit)) selector access =
@@ -73,12 +73,14 @@ module Access = struct
 
   let get_subscriptions access = 
     MVar.read access >>= fun access ->
-    let _ = ignore @@ Logs_lwt.info (fun m -> m "[YAS]: Getting all subscriptions" ) in 
+    let _ = Logs_lwt.info (fun m -> m "[YAS]: Getting all subscriptions" ) in 
     Lwt.return (List.map (fun (id, _) -> id) (SubscriberMap.bindings access.subscriptions))
 
   let eval path f access =
     MVar.guarded access @@ fun access ->
-    let _ = ignore @@ Logs_lwt.info (fun m -> m "[YAS]: EVAL on: %s" (Path.to_string path)) in
-    let new_access = {access with evals = EvalMap.add (EvalId.make ()) f access.evals} in  
-    MVar.return () new_access
+    let _ = Logs_lwt.info (fun m -> m "[YAS]: EVAL on: %s" (Path.to_string path)) in
+    let open Lwt.Infix in
+    Yaks_sock_driver.process_eval path f access.aid access.driver >>= fun () ->
+    MVar.return () {access with evals = EvalMap.add (EvalId.make ()) f access.evals}
+
 end

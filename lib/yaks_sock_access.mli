@@ -9,7 +9,7 @@ module Access : sig
   val get : Selector.t -> t -> ((Path.t * Value.t) list) Lwt.t 
   val put : Path.t -> Value.t -> t -> unit Lwt.t 
   val delta_put: Path.t -> Value.t -> t -> unit Lwt.t
-  val remove: Selector.t -> t  -> unit Lwt.t 
+  val remove: Path.t -> t  -> unit Lwt.t 
   val subscribe: ?listener:listener_t -> Selector.t -> t -> SubscriberId.t Lwt.t
   val unsubscribe: SubscriberId.t -> t -> unit Lwt.t
   val get_subscriptions : t -> (SubscriberId.t list) Lwt.t

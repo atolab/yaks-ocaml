@@ -5,12 +5,12 @@ open Yaks_sock_types.Message
 open Yaks_fe_sock_codec
 
 module WorkingMap = Map.Make(Apero.Vle)
-module ListenersMap = Map.Make(SubscriberId) 
+module ListenersMap = Map.Make(SubscriberId)
 
 type state = {
   sock : Lwt_unix.file_descr
 ; working_set : Yaks_fe_sock_types.message Lwt.u WorkingMap.t
-; subscribers : Yaks_sock_types.listener_t ListenersMap.t
+; subscribers : listener_t ListenersMap.t
 }
 
 type t = state MVar.t 
@@ -148,12 +148,12 @@ let process_patch path accessid value (driver:t) =
   else
     Lwt.return_unit
 
-let process_remove ?(delete_type=`Resource) ?(selector) deleteid (driver:t) =
+let process_remove ?(delete_type=`Resource) ?(path) deleteid (driver:t) =
   let _ = Logs_lwt.info (fun m -> m "[YASD]: REMOVE") in
-  (match selector with
-   | Some s ->
-     let _ = Logs_lwt.info (fun m -> m "[YASD]: REMOVE %s" (Selector.to_string s)) in
-     make_delete ~delete_type ~selector:s deleteid
+  (match path with
+   | Some p ->
+     let _ = Logs_lwt.info (fun m -> m "[YASD]: REMOVE %s" (Path.to_string p)) in
+     make_delete ~delete_type ~path:p deleteid
    | None ->  make_delete ~delete_type deleteid)
   >>= fun msg -> process msg driver
   >>= fun rmsg ->
@@ -187,6 +187,7 @@ let process_unsubscribe subid accessid (driver:t) =
     MVar.return () {self with subscribers = ListenersMap.remove subid self.subscribers}
 
 let process_eval path eval_callback accessid (driver:t) =
+  let _ = Logs_lwt.info (fun m -> m "[YASD]: EVAL on %s" (Path.to_string path)) in
   ignore path;
   ignore eval_callback;
   ignore accessid;
