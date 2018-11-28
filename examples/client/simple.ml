@@ -1,3 +1,4 @@
+open Apero
 open Yaks_ocaml
 open Yaks_ocaml.Yaks
 open Lwt.Infix
@@ -10,34 +11,44 @@ let observer data =
       Lwt_io.printf ">>>> [APP] [OBS] K %s - V: %s\n"  (Path.to_string k) (Value.to_string v) 
     ) data
 
+let eval_callback path props =
+  let name = Properties.get_or_default "name" ~default:"World"  props in
+  ignore @@ Lwt_io.printf ">>>> [APP] eval_callback called for %s with %s\n"  (Yaks.Path.to_string path) (Properties.to_string props);
+  Lwt.return @@ Yaks.Value.StringValue ("Hello "^name^" !!")
+
+
 let main argv = 
   let%lwt _ = Lwt_io.printf "[APP] Press enter at each step!!\n" in
   let addr = Array.get argv 1 in
   let port = Array.get argv 2 in 
   let locator = Apero.Option.get @@ Apero_net.Locator.of_string @@ Printf.sprintf "tcp/%s:%s" addr port in
   let%lwt api = Yaks.connect locator in
-  ignore @@ Lwt_io.printf "<<<< [APP] Creating storage on %s\n"  "//afos/0";
+  ignore @@ Lwt_io.printf "\n<<<< [APP] Creating storage on %s\n"  "//afos/0";
   let%lwt _ = Lwt_io.read_line Lwt_io.stdin in
   let%lwt storage = Yaks.create_storage (Path.of_string "//afos/0") api in
   let comp = 
-    ignore @@ Lwt_io.printf "<<<< [APP] Creating access on %s\n"  "//afos/0";
+    ignore @@ Lwt_io.printf "\n<<<< [APP] Creating access on %s\n"  "//afos/0";
     let%lwt _ = Lwt_io.read_line Lwt_io.stdin in
     Yaks.create_access (Path.of_string "//afos/0") api
     >>= fun access -> 
-    ignore @@ Lwt_io.printf "<<<< [APP] Subscribing to %s\n"  "//afos/**";
+    ignore @@ Lwt_io.printf "\n<<<< [APP] Add eval for to %s\n"  "//afos/0/test_eval";
+    let%lwt _ = Lwt_io.read_line Lwt_io.stdin in
+    Yaks.Access.eval (Path.of_string "//afos/0/test_eval") eval_callback access
+    >>= fun _ ->
+    ignore @@ Lwt_io.printf "\n<<<< [APP] Subscribing to %s\n"  "//afos/0/**";
     let%lwt _ = Lwt_io.read_line Lwt_io.stdin in
     Yaks.Access.subscribe ~listener:observer (Selector.of_string "//afos/0/**") access
     >>= fun subid ->
-    ignore @@ Lwt_io.printf "<<<< [APP] Put %s -> %s\n" "//afos/0" "hello!";
+    ignore @@ Lwt_io.printf "\n<<<< [APP] Put %s -> %s\n" "//afos/0" "hello!";
     let%lwt _ = Lwt_io.read_line Lwt_io.stdin in
     let t0 = Unix.gettimeofday () in 
     let _ = Yaks.Access.put 
         (Path.of_string "//afos/0/1")
         (Apero.Result.get (Value.of_string "hello!" Value.Raw_Encoding)) access in
     let t1 = Float.sub (Unix.gettimeofday ()) t0 in
-    Lwt_io.printf "<<<< [APP] Put took %f\n"  t1
+    Lwt_io.printf "\n<<<< [APP] Put took %f\n"  t1
     >>= fun _ -> 
-    ignore @@ Lwt_io.printf "<<<< [APP] Getting %s \n" "//afos/0";
+    ignore @@ Lwt_io.printf "\n<<<< [APP] Getting %s \n" "//afos/0";
     let%lwt _ = Lwt_io.read_line Lwt_io.stdin in
     Yaks.Access.get (Selector.of_string "//afos/0/*") access
     >>= fun data -> List.iter (
@@ -45,19 +56,39 @@ let main argv =
         ignore @@ Lwt_io.printf ">>>> [APP] K %s - V: %s\n"  (Path.to_string k) (Value.to_string v);
     ) data; Lwt.return_unit
     >>= fun _ -> 
-    ignore @@ Lwt_io.printf "<<<< [APP] Unsub\n";
+    ignore @@ Lwt_io.printf "\n<<<< [APP] Getting on eval %s \n" "//afos/0/test_eval";
+    let%lwt _ = Lwt_io.read_line Lwt_io.stdin in
+    Yaks.Access.get (Selector.of_string "//afos/0/test_eval?!") access
+    >>= fun data -> List.iter (
+      fun (k,v) -> 
+        ignore @@ Lwt_io.printf ">>>> [APP] K %s - V: %s\n"  (Path.to_string k) (Value.to_string v);
+    ) data; Lwt.return_unit
+    >>= fun _ -> 
+    ignore @@ Lwt_io.printf "\n<<<< [APP] Getting on eval %s with name=Bob\n" "//afos/0/test_eval";
+    let%lwt _ = Lwt_io.read_line Lwt_io.stdin in
+    Yaks.Access.get (Selector.of_string "//afos/0/test_eval?!name=Bob") access
+    >>= fun data -> List.iter (
+      fun (k,v) -> 
+        ignore @@ Lwt_io.printf ">>>> [APP] K %s - V: %s\n"  (Path.to_string k) (Value.to_string v);
+    ) data; Lwt.return_unit
+    >>= fun _ -> 
+    ignore @@ Lwt_io.printf "\n<<<< [APP] Remove eval %s \n" "//afos/0/test_eval";
+    let%lwt _ = Lwt_io.read_line Lwt_io.stdin in
+    Yaks.Access.remove (Path.of_string "//afos/0/test_eval") access
+    >>= fun _ ->
+    ignore @@ Lwt_io.printf "\n<<<< [APP] Unsub\n";
     let%lwt _ = Lwt_io.read_line Lwt_io.stdin in
     Yaks.Access.unsubscribe subid access
     >>= fun _ ->
-    ignore @@ Lwt_io.printf "<<<< [APP] Dispose access\n";
+    ignore @@ Lwt_io.printf "\n<<<< [APP] Dispose access\n";
     let%lwt _ = Lwt_io.read_line Lwt_io.stdin in
     Yaks.dispose_access access api
     >>= fun _ -> 
-    ignore @@ Lwt_io.printf "<<<< [APP] Dispose storage\n";
+    ignore @@ Lwt_io.printf "\n<<<< [APP] Dispose storage\n";
     let%lwt _ = Lwt_io.read_line Lwt_io.stdin in
     Yaks.dispose_storage storage api
     >>= fun _ -> 
-    ignore @@ Lwt_io.printf "<<<< [APP] Bye!\n";
+    ignore @@ Lwt_io.printf "\n<<<< [APP] Bye!\n";
     Yaks.close api
   in Lwt.join [comp]
 
