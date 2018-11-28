@@ -1,6 +1,6 @@
 module Yaks = struct
 
-  include Yaks_common_types
+  include Yaks_types
 
   include Yaks_api_sock.Api
 

@@ -1,4 +1,4 @@
-open Yaks_common_types
+open Yaks_types
 open Yaks_sock_access
 open Yaks_sock_storage
 

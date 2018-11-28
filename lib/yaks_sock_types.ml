@@ -1,10 +1,10 @@
 open Apero
-open Yaks_common_types
+open Yaks_types
 
 module MVar = Apero.MVar_lwt
 
 type listener_t = (Path.t * Value.t) list -> unit Lwt.t
-type eval_callback_t = Path.t -> Value.t
+type eval_callback_t = Path.t -> properties -> Value.t Lwt.t
 
 type entity_type = [
   | `Access
@@ -164,13 +164,17 @@ module Message = struct
     | _ -> Lwt.fail_with "Wrong id"
 
   
-  let make_values ?(encoding=Yaks_fe_sock_codes.RAW) id values = 
-    ignore @@ encoding;
+  let make_values corrid values = 
     let mid = Yaks_fe_sock_codes.VALUES in
+    let payload = Yaks_fe_sock_types.YPathValueList values in 
+    make_msg ~corrid mid [] Properties.empty payload
+
+  let make_eval id path =
+    let mid = Yaks_fe_sock_codes.EVAL in
     match id with
     | IdAccess id -> 
       let properties = Properties.add "is.yaks.access.id" (AccessId.to_string id) Properties.empty in
-      let payload = Yaks_fe_sock_types.YPathValueList values in 
+      let payload = Yaks_fe_sock_types.YPath path in 
       make_msg mid [Yaks_fe_sock_codes.PROPERTY] properties payload
     | _ -> Lwt.fail_with "Wrong id"
 

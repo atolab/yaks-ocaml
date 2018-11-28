@@ -1,4 +1,4 @@
-open Yaks_common_types
+open Yaks_types
 
 module Storage : sig 
 

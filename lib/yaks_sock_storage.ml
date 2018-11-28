@@ -1,5 +1,5 @@
 open Lwt.Infix
-open Yaks_common_types
+open Yaks_types
 open Yaks_sock_types
 
 module Storage = struct

@@ -1,9 +1,10 @@
-open Yaks_common_types
+open Apero
+open Yaks_types
 
 module MVar : Apero.MVar
 
 type listener_t = (Path.t * Value.t) list -> unit Lwt.t
-type eval_callback_t = Path.t -> Value.t
+type eval_callback_t = Path.t -> properties -> Value.t Lwt.t
 
 type id =
   | IdAccess of AccessId.t
@@ -29,7 +30,8 @@ module Message : sig
   val make_get : ?encoding: Yaks_fe_sock_codes.value_encoding -> id -> Selector.t -> Yaks_fe_sock_types.message Lwt.t
   val make_sub : ?encoding: Yaks_fe_sock_codes.value_encoding -> id -> Selector.t -> Yaks_fe_sock_types.message Lwt.t
   val make_unsub : id ->  id -> Yaks_fe_sock_types.message Lwt.t
-  val make_values : ?encoding: Yaks_fe_sock_codes.value_encoding -> id -> (Path.t * Value.t) list -> Yaks_fe_sock_types.message Lwt.t
+  val make_eval : id -> Path.t -> Yaks_fe_sock_types.message Lwt.t
+  val make_values : int64 -> (Path.t * Value.t) list -> Yaks_fe_sock_types.message Lwt.t
   val make_ok : id -> int64 -> Yaks_fe_sock_types.message Lwt.t
   val make_error : id -> int64 -> Yaks_fe_sock_codes.error_code -> Yaks_fe_sock_types.message Lwt.t
 end

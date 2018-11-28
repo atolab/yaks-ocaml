@@ -1,16 +1,18 @@
 open Lwt.Infix
-open Yaks_common_types
+open Yaks_types
 open Yaks_sock_types
 open Yaks_sock_types.Message
 open Yaks_fe_sock_codec
 
 module WorkingMap = Map.Make(Apero.Vle)
 module ListenersMap = Map.Make(SubscriberId)
+module EvalsMap = Map.Make(Path)
 
 type state = {
   sock : Lwt_unix.file_descr
 ; working_set : Yaks_fe_sock_types.message Lwt.u WorkingMap.t
 ; subscribers : listener_t ListenersMap.t
+; evals : eval_callback_t EvalsMap.t
 }
 
 type t = state MVar.t 
@@ -54,6 +56,21 @@ let send_to_socket msg sock =
     let%lwt _ = Logs_lwt.err (fun m -> m "Falied in encoding messge: %s" (Apero.show_error e)) in
     Lwt.fail @@ Exception e
 
+
+let process_get_on_evals selector (driver:t) =
+  let open Apero in
+  MVar.read driver >>= fun self ->
+  match Selector.get_query selector with
+  | None -> Lwt.fail_with @@ Printf.sprintf "[YAS]: Invalid selector (without query) for a get on Evals: %s" (Selector.to_string selector)
+  | Some query ->
+    if (Astring.get query 0 <> '!') then
+      Lwt.fail_with @@ Printf.sprintf "[YAS]: Invalid selector (query not starting with '!') for a get on Evals: %s" (Selector.to_string selector)
+    else
+      let params = Properties.of_string ~prop_sep:"&" (Astring.after 1 query) in
+      let matching_evals = EvalsMap.filter (fun path _ -> Selector.is_matching_path path selector) self.evals in
+      EvalsMap.fold (fun path eval l -> (path,eval)::l) matching_evals [] |>
+      Lwt_list.map_p (fun (path, eval) -> eval path params >>= fun result -> Lwt.return (path, result) )
+
 let receiver_loop (driver:t) = 
   let open Apero in
   MVar.read driver >>= fun self ->
@@ -67,28 +84,27 @@ let receiver_loop (driver:t) =
   let%lwt _ = Logs_lwt.debug (fun m -> m "Read %d bytes out of the socket" n) in
   match decode_message buf with
   | Ok (msg, _) -> 
-    (match msg.header.mid with
-     | NOTIFY -> 
-       MVar.read driver >>= fun self ->
-       ( match msg.body with
-         | YNotification (sid, data) ->
-           (match ListenersMap.find_opt (SubscriberId.of_string sid) self.subscribers with
-            | Some cb -> cb data
-            | None ->  
-              let%lwt _ = Logs_lwt.debug (fun m -> m "Received notification with unknown subscriberid %s" sid) in
-              Lwt.return_unit)
-         | _ ->  Lwt.return_unit)
-     | _ -> MVar.guarded driver
-       @@ (fun self ->
-           (match WorkingMap.find_opt msg.header.corr_id self.working_set with 
-            | Some resolver ->  let _ = Lwt.wakeup_later resolver msg in
-              MVar.return () {self with working_set = WorkingMap.remove msg.header.corr_id self.working_set}
-            | None -> let%lwt _ = Logs_lwt.debug (fun m -> m "Received message with unknown correlation id %d" @@ Vle.to_int msg.header.corr_id ) in
-              MVar.return () self)
-         ))
-
+    (match (msg.header.mid, msg.body) with
+    | (NOTIFY, YNotification (sid, data)) ->
+      MVar.read driver >>= fun self ->
+      (match ListenersMap.find_opt (SubscriberId.of_string sid) self.subscribers with
+      | Some cb -> cb data
+      | None ->  
+        let%lwt _ = Logs_lwt.debug (fun m -> m "Received notification with unknown subscriberid %s" sid) in
+        Lwt.return_unit)
+    | (GET, YSelector s) ->
+      process_get_on_evals s driver >>= fun results ->
+      make_values msg.header.corr_id results >>= fun rmsg ->
+      send_to_socket rmsg self.sock
+    | (_, _) -> MVar.guarded driver @@ (fun self ->
+      (match WorkingMap.find_opt msg.header.corr_id self.working_set with 
+      | Some resolver ->  let _ = Lwt.wakeup_later resolver msg in
+        MVar.return () {self with working_set = WorkingMap.remove msg.header.corr_id self.working_set}
+      | None -> let%lwt _ = Logs_lwt.debug (fun m -> m "Received message with unknown correlation id %d" @@ Vle.to_int msg.header.corr_id ) in
+        MVar.return () self)
+      ))
   | Error e -> 
-    let%lwt _ = Logs_lwt.err (fun m -> m "Falied in parsing message %s" (Apero.show_error e)) in
+    let%lwt _ = Logs_lwt.err (fun m -> m "Failed in parsing message %s" (Apero.show_error e)) in
     Lwt.fail @@ Exception e
 
 let rec loop driver  () =
@@ -97,7 +113,7 @@ let rec loop driver  () =
 let create locator = 
   let sock = Lwt_unix.socket PF_INET SOCK_STREAM 0 in
   Apero_net.connect sock locator >>= fun s ->
-  let driver = MVar.create {sock = s; working_set = WorkingMap.empty; subscribers = ListenersMap.empty } in
+  let driver = MVar.create {sock = s; working_set = WorkingMap.empty; subscribers = ListenersMap.empty; evals = EvalsMap.empty } in
   let _ = loop driver () in
   Lwt.return driver
 
@@ -112,6 +128,20 @@ let process (msg:Yaks_fe_sock_types.message) driver =
   send_to_socket msg self.sock
   >>= fun _ ->
   MVar.return_lwt promise {self with working_set = WorkingMap.add msg.header.corr_id completer self.working_set}
+
+let check_reply_ok corr_id (replymsg:Yaks_fe_sock_types.message) =
+  if replymsg.header.corr_id <> corr_id then
+    Lwt.fail_with "Correlation Id is different!"
+  else
+    let open Yaks_fe_sock_codes in
+    match (replymsg.header.mid, replymsg.body) with
+    | (OK, YEmpty) -> Lwt.return_unit
+    | (ERROR, YErrorInfo e) ->
+      let errno = Apero.Vle.to_int e in
+      Lwt.fail_with @@ Printf.sprintf "[YAS]: Received ERROR reply with ErrNo: %d" errno
+    | (_, _) ->
+      Lwt.fail_with @@ Printf.sprintf "[YAS]: Received unexpected reply!!"
+
 
 let process_get selector accessid (driver:t) =
   let _ = Logs_lwt.info (fun m -> m "[YASD]: GET on %s" (Selector.to_string selector)) in
@@ -132,35 +162,34 @@ let process_put path accessid value (driver:t) =
   let _ = Logs_lwt.info (fun m -> m "[YASD]: PUT on %s -> %s" (Path.to_string path) (Value.to_string value)) in
   make_put (IdAccess accessid) path value
   >>= fun msg -> process msg driver
-  >>= fun rmsg ->
-  if rmsg.header.corr_id <> msg.header.corr_id then
-    Lwt.fail_with "Correlation Id is different!"
-  else
-    Lwt.return_unit
+  >>= check_reply_ok msg.header.corr_id
 
 let process_patch path accessid value (driver:t) =
   let _ = Logs_lwt.info (fun m -> m "[YASD]: PUT on %s -> %s" (Path.to_string path) (Value.to_string value)) in
   make_put (IdAccess accessid) path value
   >>= fun msg -> process msg driver
-  >>= fun rmsg ->
-  if rmsg.header.corr_id <> msg.header.corr_id then
-    Lwt.fail_with "Correlation Id is different!"
-  else
-    Lwt.return_unit
+  >>= check_reply_ok msg.header.corr_id
 
 let process_remove ?(delete_type=`Resource) ?(path) deleteid (driver:t) =
   let _ = Logs_lwt.info (fun m -> m "[YASD]: REMOVE") in
-  (match path with
-   | Some p ->
-     let _ = Logs_lwt.info (fun m -> m "[YASD]: REMOVE %s" (Path.to_string p)) in
-     make_delete ~delete_type ~path:p deleteid
-   | None ->  make_delete ~delete_type deleteid)
-  >>= fun msg -> process msg driver
-  >>= fun rmsg ->
-  if rmsg.header.corr_id <> msg.header.corr_id then
-    Lwt.fail_with "Correlation Id is different!"
-  else
-    Lwt.return_unit
+  match path with
+  | None ->  make_delete ~delete_type deleteid
+    >>= fun msg -> process msg driver
+    >>= check_reply_ok msg.header.corr_id
+  | Some p ->
+    MVar.read driver >>= fun self ->
+    (match EvalsMap.find_opt p self.evals with
+    | Some _ ->
+      let _ = Logs_lwt.info (fun m -> m "[YASD]: REMOVE Eval %s" (Path.to_string p)) in
+      MVar.guarded driver @@ fun self ->
+      MVar.return () {self with evals = EvalsMap.remove p self.evals}
+    | None -> Lwt.return_unit)
+    >>= fun () ->
+    let _ = Logs_lwt.info (fun m -> m "[YASD]: REMOVE %s" (Path.to_string p)) in
+    make_delete ~delete_type ~path:p deleteid
+    >>= fun msg -> process msg driver
+    >>= check_reply_ok msg.header.corr_id
+   
 
 let process_subscribe ?(listener=fun _ -> Lwt.return_unit) selector accessid (driver:t) =
   let _ = Logs_lwt.info (fun m -> m "[YASD]: SUB on %s" (Selector.to_string selector)) in
@@ -179,17 +208,16 @@ let process_unsubscribe subid accessid (driver:t) =
   let _ = Logs_lwt.info (fun m -> m "[YASD]: UNSUB on %s" (SubscriberId.to_string subid) ) in
   make_unsub (IdAccess accessid) (IdSubscription subid)
   >>= fun msg ->  process msg driver
-  >>= fun rmsg ->
-  if rmsg.header.corr_id <> msg.header.corr_id then
-    Lwt.fail_with "Correlation Id is different!"
-  else
+  >>= check_reply_ok msg.header.corr_id
+  >>= fun () ->
     MVar.guarded driver @@ fun self ->
     MVar.return () {self with subscribers = ListenersMap.remove subid self.subscribers}
 
 let process_eval path eval_callback accessid (driver:t) =
   let _ = Logs_lwt.info (fun m -> m "[YASD]: EVAL on %s" (Path.to_string path)) in
-  ignore path;
-  ignore eval_callback;
-  ignore accessid;
-  ignore driver;
-  Lwt.return_unit
+  make_eval (IdAccess accessid) path
+  >>= fun msg ->  process msg driver
+  >>= check_reply_ok msg.header.corr_id
+  >>= fun () ->
+    MVar.guarded driver @@ fun self ->
+    MVar.return () {self with evals = EvalsMap.add path eval_callback self.evals}
