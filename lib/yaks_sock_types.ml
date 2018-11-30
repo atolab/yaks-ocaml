@@ -22,6 +22,7 @@ module Message = struct
 
 
   let make_msg ?corrid mid flags properties payload = 
+    (* NOTE: no need to set PROPERTY in flags. If properties is not empty, make_header below add the flag *)
     let corr_id = 
       (match corrid with
        | Some i -> i
@@ -42,42 +43,15 @@ module Message = struct
       make_msg mid [] Properties.empty Yaks_fe_sock_types.YEmpty
     | _ , _ -> Lwt.fail_with "Not yet..."
 
-  let make_create ?alias ?config ?complete t p cache_size =
+  let make_create t p properties =
     let mid = Yaks_fe_sock_codes.CREATE in
-    let properties = Properties.empty in
     let payload = Yaks_fe_sock_types.YPath p in
     match t with
     | `Access -> 
-      let properties = Properties.add "is.yaks.access.cachesize" (string_of_int cache_size) properties in
-      let flags = [Yaks_fe_sock_codes.ACCESS; Yaks_fe_sock_codes.PROPERTY] in 
-      let properties = (match alias with
-          | Some a -> 
-            Properties.add "is.yaks.access.alias" a properties
-          | None -> 
-            properties) in
+      let flags = [Yaks_fe_sock_codes.ACCESS] in 
       make_msg mid flags properties payload 
     | `Storage -> 
       let flags = [Yaks_fe_sock_codes.STORAGE] in 
-      let properties = (match alias with
-          | Some a -> 
-            Properties.add "is.yaks.storage.alias" a properties
-          | None -> 
-            properties ) in 
-      let properties = (match config with
-          | Some c -> 
-            Properties.add "is.yaks.storage.config" c properties
-          | None -> 
-            properties ) in 
-      let properties = (match complete with
-          | Some true -> 
-            Properties.add "is.yaks.storage.complete" "true" properties
-          | Some false -> properties
-          | None -> properties) 
-      in 
-      let flags = (if Properties.is_empty properties == false then
-                     List.append [Yaks_fe_sock_codes.PROPERTY] flags
-                   else
-                     flags) in
       make_msg mid flags properties payload
     | _ -> Lwt.fail_with "Entity Create Not supported!!"
 
@@ -88,7 +62,7 @@ module Message = struct
     | `Access -> 
       (match id with 
        | IdAccess aid ->   
-         let properties = Properties.add "is.yaks.access.id" (AccessId.to_string aid) Properties.empty in
+         let properties = Properties.add Yaks_properties.Access.Key.id (AccessId.to_string aid) Properties.empty in
          make_msg mid [Yaks_fe_sock_codes.ACCESS; Yaks_fe_sock_codes.PROPERTY] properties YEmpty
        | _ -> Lwt.fail_with "Wrong id"
       )
@@ -96,14 +70,14 @@ module Message = struct
     | `Storage -> 
       (match id with 
        | IdStorage sid ->   
-         let properties = Properties.add "is.yaks.storage.id" (StorageId.to_string sid) Properties.empty in
+         let properties = Properties.add Yaks_properties.Storage.Key.id (StorageId.to_string sid) Properties.empty in
          make_msg mid [Yaks_fe_sock_codes.STORAGE; Yaks_fe_sock_codes.PROPERTY] properties YEmpty
        | _ -> Lwt.fail_with "Wrong id"
       )
     | `Resource -> 
       (match id with 
        | IdAccess aid ->   
-         let properties = Properties.add "is.yaks.access.id" (AccessId.to_string aid) Properties.empty in
+         let properties = Properties.add Yaks_properties.Access.Key.id (AccessId.to_string aid) Properties.empty in
          let payload = Yaks_fe_sock_types.YPath (Apero.Option.get path) in
          make_msg mid [Yaks_fe_sock_codes.PROPERTY] properties payload
        | _ -> Lwt.fail_with "Wrong id"
@@ -115,7 +89,7 @@ module Message = struct
     match id with
     | IdAccess id -> 
       let payload = Yaks_fe_sock_types.YPathValueList [(path, value)] in 
-      let properties = Properties.add "is.yaks.access.id" (AccessId.to_string id) Properties.empty in
+      let properties = Properties.add Yaks_properties.Access.Key.id (AccessId.to_string id) Properties.empty in
       make_msg mid [Yaks_fe_sock_codes.PROPERTY] properties payload
     | _ -> Lwt.fail_with "Wrong id"
 
@@ -126,7 +100,7 @@ module Message = struct
     match id with
     | IdAccess id -> 
       let payload = Yaks_fe_sock_types.YPathValueList [(path, value)] in 
-      let properties = Properties.add "is.yaks.access.id" (AccessId.to_string id) Properties.empty in
+      let properties = Properties.add Yaks_properties.Access.Key.id (AccessId.to_string id) Properties.empty in
       make_msg mid [Yaks_fe_sock_codes.PROPERTY] properties payload
     | _ -> Lwt.fail_with "Wrong id"
 
@@ -136,7 +110,7 @@ module Message = struct
     match id with
     | IdAccess id -> 
       let payload = Yaks_fe_sock_types.YSelector selector in 
-      let properties = Properties.add "is.yaks.access.id" (AccessId.to_string id) Properties.empty in
+      let properties = Properties.add Yaks_properties.Access.Key.id (AccessId.to_string id) Properties.empty in
       make_msg mid [Yaks_fe_sock_codes.PROPERTY] properties payload
     | _ -> Lwt.fail_with "Wrong id"
 
@@ -146,7 +120,7 @@ module Message = struct
     match id with
     | IdAccess id -> 
       let payload = Yaks_fe_sock_types.YSelector selector in 
-      let properties = Properties.add "is.yaks.access.id" (AccessId.to_string id) Properties.empty in
+      let properties = Properties.add Yaks_properties.Access.Key.id (AccessId.to_string id) Properties.empty in
       make_msg mid [Yaks_fe_sock_codes.PROPERTY] properties payload
     | _ -> Lwt.fail_with "Wrong id"
 
@@ -156,7 +130,7 @@ module Message = struct
     | IdAccess aid -> 
       (match subscriptionid with
        | IdSubscription sid -> 
-         let properties = Properties.add "is.yaks.access.id" (AccessId.to_string aid) Properties.empty in
+         let properties = Properties.add Yaks_properties.Access.Key.id (AccessId.to_string aid) Properties.empty in
          let payload = Yaks_fe_sock_types.YSubscription (SubscriberId.to_string sid) in 
          make_msg mid [Yaks_fe_sock_codes.PROPERTY] properties payload
        | _ -> Lwt.fail_with "Wrong id"
@@ -173,7 +147,7 @@ module Message = struct
     let mid = Yaks_fe_sock_codes.EVAL in
     match id with
     | IdAccess id -> 
-      let properties = Properties.add "is.yaks.access.id" (AccessId.to_string id) Properties.empty in
+      let properties = Properties.add Yaks_properties.Access.Key.id (AccessId.to_string id) Properties.empty in
       let payload = Yaks_fe_sock_types.YPath path in 
       make_msg mid [Yaks_fe_sock_codes.PROPERTY] properties payload
     | _ -> Lwt.fail_with "Wrong id"
@@ -183,7 +157,7 @@ module Message = struct
     let mid = Yaks_fe_sock_codes.OK in
     match accessid with
     | IdAccess id ->
-      let properties = Properties.add "is.yaks.access.id" (AccessId.to_string id) Properties.empty in
+      let properties = Properties.add Yaks_properties.Access.Key.id (AccessId.to_string id) Properties.empty in
       make_msg ~corrid mid [Yaks_fe_sock_codes.PROPERTY] properties YEmpty
     | _ -> Lwt.fail_with "Wrong id"
 
@@ -192,7 +166,7 @@ module Message = struct
     let mid = Yaks_fe_sock_codes.ERROR in
     match accessid with
     | IdAccess id ->
-      let properties = Properties.add "is.yaks.access.id" (AccessId.to_string id) Properties.empty in
+      let properties = Properties.add Yaks_properties.Access.Key.id (AccessId.to_string id) Properties.empty in
       make_msg ~corrid mid [Yaks_fe_sock_codes.PROPERTY] properties (Yaks_fe_sock_types.YErrorInfo  (Int64.of_int (Yaks_fe_sock_codes.error_code_to_int errno)) )
     | _ -> Lwt.fail_with "Wrong id"
 end

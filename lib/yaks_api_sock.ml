@@ -45,21 +45,32 @@ module Api = struct
     let _ = ignore @@ Logs_lwt.info (fun m -> m "[YAS]: Closing connection to: %s " (Apero_net.Locator.to_string api.endpoint)) in
     Yaks_sock_driver.destroy api.driver
 
-  let create_access ?(cache_size=1024) ?(encoding=Yaks_fe_sock_codes.RAW) path api = 
+  let create_access ?(properties=Properties.empty) ?alias path api = 
     MVar.guarded api @@ fun self -> 
     let open Message in
     let _ = ignore @@ Logs_lwt.info (fun m -> m "[YAS]: Creating access on endpoint %s " (Apero_net.Locator.to_string self.endpoint)) in 
-    make_create `Access path cache_size 
+    let properties = match alias with
+      | Some alias -> Properties.add Yaks_properties.Access.Key.alias alias properties
+      | None -> properties
+    in
+    make_create `Access path properties 
     >>= fun msg -> Yaks_sock_driver.process msg self.driver 
-    >>= fun rmsg -> 
+    >>= fun rmsg ->
     if msg.header.corr_id <> rmsg.header.corr_id then
       Lwt.fail_with "Correlation Incorrect"
     else
-      let aid = Properties.find "is.yaks.access.id" rmsg.header.properties in
-      let access_id = Apero.Option.get @@ AccessId.of_string aid in
-      let access = Access.create cache_size encoding path access_id self.driver in
-      let _ =  Logs_lwt.info (fun m -> m "[YAS]: Created access %s " (AccessId.to_string access_id)) in
-      MVar.return access {self with accesses = AccessMap.add access_id access self.accesses}
+      match rmsg.header.mid, rmsg.body with
+      | OK, _ ->
+        let aid = Properties.find Yaks_properties.Access.Key.id rmsg.header.properties in
+        let access_id = Apero.Option.get @@ AccessId.of_string aid in
+        let access = Access.create access_id path properties self.driver in
+        let _ =  Logs_lwt.info (fun m -> m "[YAS]: Created access %s " (AccessId.to_string access_id)) in
+        MVar.return access { self with accesses = AccessMap.add access_id access self.accesses }
+      | ERROR, YErrorInfo vle ->
+        Lwt.fail_with @@ "Yaks reported error: "^(Yaks_fe_sock_types.error_info_to_string vle)
+      | _, _ ->
+        Lwt.fail_with @@ "Unexpected reply message: "^(Yaks_fe_sock_codes.message_id_to_string rmsg.header.mid)
+
 
   let dispose_access access api =
     let open Message in
@@ -84,22 +95,31 @@ module Api = struct
     MVar.read api >>= fun api ->
     Lwt.return @@ AccessMap.find access_id api.accesses
 
-  let create_storage ?(properties=Properties.empty) path api =
+  let create_storage ?(properties=Properties.empty) ?alias path api =
     let open Message in
     MVar.guarded api @@ fun api ->
     let _ = ignore @@ Logs_lwt.info (fun m -> m "[YAS]: Creating Storage on endpoint %s " (Apero_net.Locator.to_string api.endpoint)) in
-    make_create `Storage path 0 
+    let properties = match alias with
+      | Some alias -> Properties.add Yaks_properties.Storage.Key.alias alias properties
+      | None -> properties
+    in
+    make_create `Storage path properties 
     >>= fun msg -> Yaks_sock_driver.process msg api.driver
     >>= fun rmsg -> 
     if msg.header.corr_id <> rmsg.header.corr_id then
       Lwt.fail_with "Correlation Incorrect"
     else
-      let sid = Properties.find "is.yaks.storage.id" rmsg.header.properties in
-      let _ = Logs_lwt.info (fun m -> m "[YAS]: Created Storage with sid %s " sid) in
-      let storageid = Apero.Option.get @@ StorageId.of_string sid in
-      let _ =  Logs_lwt.info (fun m -> m "[YAS]: Created storage %s " (StorageId.to_string storageid)) in
-      let storage = Storage.create properties path storageid api.driver in
-      MVar.return storage {api with storages = StorageMap.add storageid storage api.storages}
+      match rmsg.header.mid, rmsg.body with
+      | OK, _ ->
+        let sid = Properties.find Yaks_properties.Access.Key.id rmsg.header.properties in
+        let storageid = Apero.Option.get @@ StorageId.of_string sid in
+        let storage = Storage.create storageid properties path api.driver in
+        let _ =  Logs_lwt.info (fun m -> m "[YAS]: Created storage %s " (StorageId.to_string storageid)) in
+        MVar.return storage {api with storages = StorageMap.add storageid storage api.storages}
+      | ERROR, YErrorInfo vle ->
+        Lwt.fail_with @@ "Yaks reported error: "^(Yaks_fe_sock_types.error_info_to_string vle)
+      | _, _ ->
+        Lwt.fail_with @@ "Unexpected reply message: "^(Yaks_fe_sock_codes.message_id_to_string rmsg.header.mid)
 
   let dispose_storage storage api = 
     let open Message in

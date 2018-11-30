@@ -14,7 +14,7 @@ module Storage = struct
 
   type t = state MVar.t
 
-  let create properties path id driver = 
+  let create id properties path driver = 
     MVar.create {sid=id; path; properties; driver}
 
   let get_id storage = 

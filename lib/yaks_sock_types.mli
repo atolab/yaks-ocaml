@@ -23,7 +23,7 @@ module Message : sig
   val make_msg : ?corrid:int64 -> Yaks_fe_sock_codes.message_id -> Yaks_fe_sock_codes.message_flags list -> Apero.properties -> Yaks_fe_sock_types.payload -> Yaks_fe_sock_types.message Lwt.t
 
   val make_open : ?username:String.t -> ?password:String.t -> unit -> Yaks_fe_sock_types.message Lwt.t
-  val make_create : ?alias:String.t -> ?config:String.t -> ?complete:bool -> entity_type -> Path.t -> int -> Yaks_fe_sock_types.message Lwt.t
+  val make_create : entity_type -> Path.t -> properties -> Yaks_fe_sock_types.message Lwt.t
   val make_delete : ?delete_type:entity_type -> ?path:Path.t -> id -> Yaks_fe_sock_types.message Lwt.t
   val make_put : ?encoding: Yaks_fe_sock_codes.value_encoding -> id ->  Path.t -> Value.t -> Yaks_fe_sock_types.message Lwt.t 
   val make_patch : ?encoding: Yaks_fe_sock_codes.value_encoding -> id -> Path.t -> Value.t -> Yaks_fe_sock_types.message Lwt.t 

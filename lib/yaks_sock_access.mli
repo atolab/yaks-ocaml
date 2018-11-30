@@ -5,7 +5,7 @@ open Yaks_sock_types
 module Access : sig 
   type t
 
-  val create : int -> Yaks_fe_sock_codes.value_encoding -> Path.t -> AccessId.t -> Yaks_sock_driver.t -> t
+  val create : AccessId.t -> Path.t -> Apero.properties -> Yaks_sock_driver.t -> t
   val get : Selector.t -> t -> ((Path.t * Value.t) list) Lwt.t 
   val put : Path.t -> Value.t -> t -> unit Lwt.t 
   val delta_put: Path.t -> Value.t -> t -> unit Lwt.t

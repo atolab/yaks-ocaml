@@ -199,7 +199,7 @@ let process_subscribe ?(listener=fun _ -> Lwt.return_unit) selector accessid (dr
   if rmsg.header.corr_id <> msg.header.corr_id then
     Lwt.fail_with "Correlation Id is different!"
   else
-    let sid = Apero.Properties.find "is.yaks.subscription.id" rmsg.header.properties in
+    let sid = Apero.Properties.find Yaks_properties.Access.Key.subscription_id rmsg.header.properties in
     let subid = SubscriberId.of_string sid in
     MVar.guarded driver @@ fun self ->
     MVar.return subid {self with subscribers = ListenersMap.add subid listener self.subscribers}

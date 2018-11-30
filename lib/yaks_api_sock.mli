@@ -11,14 +11,14 @@ module Api : sig
 
   (* Access mgmt *)
 
-  val create_access : ?cache_size:int -> ?encoding:Yaks_fe_sock_codes.value_encoding -> Path.t -> t -> Access.t Lwt.t
+  val create_access : ?properties:Apero.properties -> ?alias:string -> Path.t -> t -> Access.t Lwt.t
   val dispose_access : Access.t -> t -> unit Lwt.t
   val get_accesses : t -> (Access.t list) Lwt.t
   val get_access : AccessId.t -> t -> Access.t Lwt.t
 
   (* Storage mgmt *)
 
-  val create_storage: ?properties:Apero.properties  -> Path.t -> t -> Storage.t Lwt.t
+  val create_storage: ?properties:Apero.properties -> ?alias:string -> Path.t -> t -> Storage.t Lwt.t
   val dispose_storage: Storage.t -> t -> unit Lwt.t
   val get_storages: t -> (Storage.t list) Lwt.t
   val get_storage: StorageId.t -> t -> Storage.t Lwt.t
