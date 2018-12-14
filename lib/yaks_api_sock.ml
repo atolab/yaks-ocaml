@@ -111,7 +111,7 @@ module Api = struct
     else
       match rmsg.header.mid, rmsg.body with
       | OK, _ ->
-        let sid = Properties.find Yaks_properties.Access.Key.id rmsg.header.properties in
+        let sid = Properties.find Yaks_properties.Storage.Key.id rmsg.header.properties in
         let storageid = Apero.Option.get @@ StorageId.of_string sid in
         let storage = Storage.create storageid properties path api.driver in
         let _ =  Logs_lwt.info (fun m -> m "[YAS]: Created storage %s " (StorageId.to_string storageid)) in
