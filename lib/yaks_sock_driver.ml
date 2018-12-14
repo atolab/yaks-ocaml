@@ -60,13 +60,10 @@ let send_to_socket msg sock =
 let process_get_on_evals selector (driver:t) =
   let open Apero in
   MVar.read driver >>= fun self ->
-  match Selector.get_query selector with
-  | None -> Lwt.fail_with @@ Printf.sprintf "[YAS]: Invalid selector (without query) for a get on Evals: %s" (Selector.to_string selector)
-  | Some query ->
-    if (Astring.get query 0 <> '!') then
-      Lwt.fail_with @@ Printf.sprintf "[YAS]: Invalid selector (query not starting with '!') for a get on Evals: %s" (Selector.to_string selector)
-    else
-      let params = Properties.of_string ~prop_sep:"&" (Astring.after 1 query) in
+  match Selector.properties selector with
+  | None -> Lwt.fail_with @@ Printf.sprintf "[YAS]: Invalid selector (without properties) for a get on Evals: %s" (Selector.to_string selector)
+  | Some props ->
+      let params = Properties.of_string ~prop_sep:"&" props in
       let matching_evals = EvalsMap.filter (fun path _ -> Selector.is_matching_path path selector) self.evals in
       EvalsMap.fold (fun path eval l -> (path,eval)::l) matching_evals [] |>
       Lwt_list.map_p (fun (path, eval) -> eval path params >>= fun result -> Lwt.return (path, result) )

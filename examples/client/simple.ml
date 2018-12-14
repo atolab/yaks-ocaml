@@ -58,7 +58,7 @@ let main argv =
     >>= fun _ -> 
     ignore @@ Lwt_io.printf "\n<<<< [APP] Getting on eval %s \n" "//afos/0/test_eval";
     let%lwt _ = Lwt_io.read_line Lwt_io.stdin in
-    Yaks.Access.get (Selector.of_string "//afos/0/test_eval?!") access
+    Yaks.Access.get (Selector.of_string "//afos/0/test_eval?[]") access
     >>= fun data -> List.iter (
       fun (k,v) -> 
         ignore @@ Lwt_io.printf ">>>> [APP] K %s - V: %s\n"  (Path.to_string k) (Value.to_string v);
@@ -66,7 +66,7 @@ let main argv =
     >>= fun _ -> 
     ignore @@ Lwt_io.printf "\n<<<< [APP] Getting on eval %s with name=Bob\n" "//afos/0/test_eval";
     let%lwt _ = Lwt_io.read_line Lwt_io.stdin in
-    Yaks.Access.get (Selector.of_string "//afos/0/test_eval?!name=Bob") access
+    Yaks.Access.get (Selector.of_string "//afos/0/test_eval?[name=Bob]") access
     >>= fun data -> List.iter (
       fun (k,v) -> 
         ignore @@ Lwt_io.printf ">>>> [APP] K %s - V: %s\n"  (Path.to_string k) (Value.to_string v);
