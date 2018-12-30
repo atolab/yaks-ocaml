@@ -17,7 +17,7 @@ let eval_callback path props =
 
 
 let print_admin_space workspace =
-  let sel = Yaks.Selector.of_string "/yaks/local/**" in
+  let sel = Yaks.Selector.of_string "/_admin_/local/**" in
   Yaks.Workspace.get sel workspace
   >|= List.sort (fun (p,_) (p',_) -> Yaks.Path.compare p p')
   >|= fun pvs ->

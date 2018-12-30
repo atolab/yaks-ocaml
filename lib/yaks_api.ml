@@ -60,7 +60,7 @@ end
 module Admin = struct
   type t = { admin : Workspace.t }
 
-  let prefix = "yaks"
+  let prefix = "_admin_"
   let my_yaks = "local"
 
   let properties_of_value v = match v with
