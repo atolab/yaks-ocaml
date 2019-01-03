@@ -44,7 +44,7 @@ let main argv =
   let%lwt _ = Lwt_io.printf "\n<<<< [APP] Creating storage on %s\n"  "/afos/0" in
   let%lwt admin = Yaks.admin api in
   let%lwt _ = Lwt_io.read_line Lwt_io.stdin in
-  let%lwt _ = Yaks.Admin.add_storage "AFOS-0" (Properties.singleton "path" "/afos/0") admin in
+  let%lwt _ = Yaks.Admin.add_storage "AFOS-0" (Properties.singleton "selector" "/afos/0") admin in
 
   ignore @@ print_admin_space workspace;
 
