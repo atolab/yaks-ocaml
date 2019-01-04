@@ -12,12 +12,12 @@ let observer data =
 
 let eval_callback path props =
   let name = Properties.get_or_default "name" ~default:"World"  props in
-  ignore @@ Lwt_io.printf ">>>> [APP] eval_callback called for %s with %s\n"  (Yaks.Path.to_string path) (Properties.to_string props);
+  let%lwt _ = Lwt_io.printf ">>>> [APP] eval_callback called for %s with %s\n"  (Yaks.Path.to_string path) (Properties.to_string props) in
   Lwt.return @@ Yaks.Value.StringValue ("Hello "^name^" !!")
 
 
 let print_admin_space workspace =
-  let sel = Yaks.Selector.of_string "/_admin_/local/**" in
+  let sel = Yaks.Selector.of_string "/@/local/**" in
   Yaks.Workspace.get sel workspace
   >|= List.sort (fun (p,_) (p',_) -> Yaks.Path.compare p p')
   >|= fun pvs ->
@@ -46,28 +46,30 @@ let main argv =
   let%lwt _ = Lwt_io.read_line Lwt_io.stdin in
   let%lwt _ = Yaks.Admin.add_storage "AFOS-0" (Properties.singleton "selector" "/afos/0") admin in
 
-  ignore @@ print_admin_space workspace;
+  let%lwt _ = print_admin_space workspace in
 
-  ignore @@ Lwt_io.printf "\n<<<< [APP] Add eval for to %s\n"  "/afos/0/test_eval";
+  let%lwt _ = Lwt_io.printf "\n<<<< [APP] Register eval for to %s\n"  "/afos/0/test_eval" in
   let%lwt _ = Lwt_io.read_line Lwt_io.stdin in
-  let%lwt _ = Yaks.Workspace.eval (Yaks.Path.of_string "test_eval") eval_callback workspace in
+  let%lwt _ = Yaks.Workspace.register_eval (Yaks.Path.of_string "test_eval") eval_callback workspace in
 
-  ignore @@ Lwt_io.printf "\n<<<< [APP] Subscribing to %s\n"  "/afos/0/**";
+  let%lwt _ = print_admin_space workspace in
+
+  let%lwt _ = Lwt_io.printf "\n<<<< [APP] Subscribing to %s\n"  "/afos/0/**" in
   let%lwt _ = Lwt_io.read_line Lwt_io.stdin in
   let%lwt subid = Yaks.Workspace.subscribe ~listener:observer (Yaks.Selector.of_string "**") workspace in
 
-  ignore @@ print_admin_space workspace;
+  let%lwt _ = print_admin_space workspace in
 
-  ignore @@ Lwt_io.printf "\n<<<< [APP] Put %s -> %s\n" "/afos/0" "hello!";
+  let%lwt _ = Lwt_io.printf "\n<<<< [APP] Put %s -> %s\n" "/afos/0" "hello!" in
   let%lwt _ = Lwt_io.read_line Lwt_io.stdin in
   let t0 = Unix.gettimeofday () in 
   let%lwt _ = Yaks.Workspace.put 
       (Yaks.Path.of_string "/afos/0/1")
       (Apero.Result.get (Yaks.Value.of_string "hello!" Yaks.Value.Raw_Encoding)) workspace in
   let t1 = Float.sub (Unix.gettimeofday ()) t0 in
-  ignore @@ Lwt_io.printf "\n<<<< [APP] Put took %f\n" t1;
+  let%lwt _ = Lwt_io.printf "\n<<<< [APP] Put took %f\n" t1 in
 
-  ignore @@ Lwt_io.printf "\n<<<< [APP] Getting %s \n" "/afos/0";
+  let%lwt _ = Lwt_io.printf "\n<<<< [APP] Getting %s \n" "/afos/0" in
   let%lwt _ = Lwt_io.read_line Lwt_io.stdin in
   Yaks.Workspace.get (Yaks.Selector.of_string "*") workspace
   >>= fun data -> List.iter (
@@ -76,47 +78,47 @@ let main argv =
   ) data; Lwt.return_unit
   >>= fun _ -> 
 
-  ignore @@ Lwt_io.printf "\n<<<< [APP] Getting on eval %s \n" "/afos/0/test_eval";
+  let%lwt _ = Lwt_io.printf "\n<<<< [APP] Calling eval %s \n" "/afos/0/test_eval" in
   let%lwt _ = Lwt_io.read_line Lwt_io.stdin in
-  let%lwt _ = Yaks.Workspace.get (Yaks.Selector.of_string "/afos/0/test_eval?[]") workspace
+  let%lwt _ = Yaks.Workspace.eval (Yaks.Selector.of_string "/afos/0/test_eval?[]") workspace
   >>= fun data -> List.iter (
     fun (k,v) -> 
       ignore @@ Lwt_io.printf ">>>> [APP] K %s - V: %s\n"  (Yaks.Path.to_string k) (Yaks.Value.to_string v);
   ) data; Lwt.return_unit
   in
   
-  ignore @@ Lwt_io.printf "\n<<<< [APP] Getting on eval %s with name=Bob\n" "/afos/0/test_eval";
+  let%lwt _ = Lwt_io.printf "\n<<<< [APP] Calling eval %s with name=Bob\n" "/afos/0/test_eval" in
   let%lwt _ = Lwt_io.read_line Lwt_io.stdin in
-  let%lwt _ =Yaks.Workspace.get (Yaks.Selector.of_string "/afos/0/test_eval?[name=Bob]") workspace
+  let%lwt _ =Yaks.Workspace.eval (Yaks.Selector.of_string "/afos/0/test_eval?[name=Bob]") workspace
   >>= fun data -> List.iter (
     fun (k,v) -> 
       ignore @@ Lwt_io.printf ">>>> [APP] K %s - V: %s\n"  (Yaks.Path.to_string k) (Yaks.Value.to_string v);
   ) data; Lwt.return_unit
   in
 
-  ignore @@ Lwt_io.printf "\n<<<< [APP] Remove eval %s \n" "/afos/0/test_eval";
+  let%lwt _ = Lwt_io.printf "\n<<<< [APP] Unregister eval %s \n" "/afos/0/test_eval" in
   let%lwt _ = Lwt_io.read_line Lwt_io.stdin in
-  let%lwt _ = Yaks.Workspace.remove (Yaks.Path.of_string "/afos/0/test_eval") workspace in
+  let%lwt _ = Yaks.Workspace.unregister_eval (Yaks.Path.of_string "/afos/0/test_eval") workspace in
 
-  ignore @@ print_admin_space workspace;
+  let%lwt _ = print_admin_space workspace in
 
-  ignore @@ Lwt_io.printf "\n<<<< [APP] Unsub\n";
+  let%lwt _ = Lwt_io.printf "\n<<<< [APP] Unsub\n" in
   let%lwt _ = Lwt_io.read_line Lwt_io.stdin in
   let%lwt _ = Yaks.Workspace.unsubscribe subid workspace in
 
-  ignore @@ print_admin_space workspace;
+  let%lwt _ = print_admin_space workspace in
 
-  ignore @@ Lwt_io.printf "\n<<<< [APP] Remove storage\n";
+  let%lwt _ = Lwt_io.printf "\n<<<< [APP] Remove storage\n" in
   let%lwt _ = Lwt_io.read_line Lwt_io.stdin in
   let%lwt _ = Yaks.Admin.remove_storage "AFOS-0" admin in
 
-  ignore @@ print_admin_space workspace;
+  let%lwt _ = print_admin_space workspace in
 
-  ignore @@ Lwt_io.printf "\n<<<< [APP] logout\n";
+  let%lwt _ = Lwt_io.printf "\n<<<< [APP] logout\n" in
   let%lwt _ = Lwt_io.read_line Lwt_io.stdin in
   let%lwt _ = Yaks.logout api in
 
-  ignore @@ Lwt_io.printf "\n<<<< [APP] Bye!\n";
+  let%lwt _ = Lwt_io.printf "\n<<<< [APP] Bye!\n" in
   Lwt.return_unit
 
 

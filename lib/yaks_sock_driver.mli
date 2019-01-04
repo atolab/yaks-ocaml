@@ -16,7 +16,9 @@ val process_update : ?quorum:int -> ?workspace:wsid -> Path.t ->Value.t -> t -> 
 val process_remove : ?quorum:int -> ?workspace:wsid -> Path.t -> t  -> unit Lwt.t 
 val process_subscribe : ?workspace:wsid -> ?listener:listener_t -> Selector.t -> t -> subid Lwt.t
 val process_unsubscribe :  subid -> t -> unit Lwt.t
-val process_eval : ?workspace:wsid -> Path.t -> eval_callback_t -> t -> unit Lwt.t
+val process_register_eval : ?workspace:wsid -> ?workpath:Path.t -> Path.t -> eval_callback_t -> t -> unit Lwt.t
+val process_unregister_eval : ?workspace:wsid -> ?workpath:Path.t -> Path.t -> t -> unit Lwt.t
+val process_eval : ?multiplicity:int -> ?workspace:wsid -> Selector.t -> t -> ((Path.t * Value.t) list) Lwt.t 
 
 val process : Yaks_fe_sock_types.message -> t -> Yaks_fe_sock_types.message Lwt.t
 

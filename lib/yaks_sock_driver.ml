@@ -57,11 +57,11 @@ let send_to_socket msg sock =
     Lwt.fail @@ Exception e
 
 
-let process_get_on_evals selector (driver:t) =
+let process_eval selector (driver:t) =
   let open Apero in
   MVar.read driver >>= fun self ->
   match Selector.properties selector with
-  | None -> Lwt.fail_with @@ Printf.sprintf "[YAS]: Invalid selector (without properties) for a get on Evals: %s" (Selector.to_string selector)
+  | None -> Lwt.fail_with @@ Printf.sprintf "[YAS]: Invalid selector (without properties) for a eval : %s" (Selector.to_string selector)
   | Some props ->
       let params = Properties.of_string ~prop_sep:"&" props in
       let matching_evals = EvalsMap.filter (fun path _ -> Selector.is_matching_path path selector) self.evals in
@@ -93,8 +93,8 @@ let receiver_loop (driver:t) =
       | None ->  
         let%lwt _ = Logs_lwt.debug (fun m -> m "Received notification with unknown subscriberid %s" subid) in
         Lwt.return_unit)
-    | (GET, YSelector s) ->
-      process_get_on_evals s driver >>= fun results ->
+    | (EVAL, YSelector s) ->
+      process_eval s driver >>= fun results ->
       make_values msg.header.corr_id results >>= fun rmsg ->
       send_to_socket rmsg self.sock
     | (_, _) -> MVar.guarded driver @@ (fun self ->
@@ -220,11 +220,46 @@ let process_unsubscribe subid (driver:t) =
     MVar.guarded driver @@ fun self ->
     MVar.return () {self with subscribers = ListenersMap.remove subid self.subscribers}
 
-let process_eval ?workspace path eval_callback (driver:t) =
-  let _ = Logs_lwt.info (fun m -> m "[YASD]: EVAL on %s" (Path.to_string path)) in
-  make_eval ?workspace path
+
+let to_absolute_path ?workpath path =
+  if Path.is_relative path then
+    match workpath with
+    | Some p -> Path.add_prefix ~prefix:p path
+    | None -> Path.add_prefix ~prefix:(Path.of_string "/") path
+  else path
+
+let process_register_eval ?workspace ?workpath path eval_callback (driver:t) =
+  let _ = Logs_lwt.info (fun m -> m "[YASD]: REG_EVAL on %s" (Path.to_string path)) in
+  make_reg_eval ?workspace path
   >>= fun msg ->  process msg driver
   >>= check_reply_ok msg.header.corr_id
   >>= fun () ->
+    (* Note: callbacks are locally registered with absolute path since evals will come with absolute selectors *)
+    let abspath = to_absolute_path ?workpath path in
     MVar.guarded driver @@ fun self ->
-    MVar.return () {self with evals = EvalsMap.add path eval_callback self.evals}
+    MVar.return () {self with evals = EvalsMap.add abspath eval_callback self.evals}
+
+let process_unregister_eval ?workspace ?workpath path (driver:t) =
+  let _ = Logs_lwt.info (fun m -> m "[YASD]: UNREG_EVAL on %s" (Path.to_string path)) in
+  make_unreg_eval ?workspace path
+  >>= fun msg ->  process msg driver
+  >>= check_reply_ok msg.header.corr_id
+  >>= fun () ->
+    let abspath = to_absolute_path ?workpath path in
+    MVar.guarded driver @@ fun self ->
+    MVar.return () {self with evals = EvalsMap.remove abspath self.evals}
+
+let process_eval ?multiplicity ?workspace selector (driver:t) =
+  let _ = Logs_lwt.info (fun m -> m "[YASD]: EVAL on %s" (Selector.to_string selector)) in
+  make_eval ?multiplicity ?workspace selector
+  >>= fun msg -> process msg driver
+  >>= fun rmsg ->
+  if rmsg.header.corr_id <> msg.header.corr_id then
+    Lwt.fail_with "Correlation Id is different!"
+  else
+    match rmsg.body with
+    | YPathValueList l -> Lwt.return l
+    | YErrorInfo e ->
+      let errno = Apero.Vle.to_int e in
+      Lwt.fail_with @@ Printf.sprintf "[YAS]: GET ErrNo: %d" errno
+    | _ -> Lwt.fail_with "Message body is wrong"

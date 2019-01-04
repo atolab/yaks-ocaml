@@ -24,7 +24,9 @@ module Message : sig
   val make_remove : ?quorum:int -> ?workspace:wsid -> Path.t -> Yaks_fe_sock_types.message Lwt.t
   val make_sub : ?workspace:wsid -> Selector.t -> Yaks_fe_sock_types.message Lwt.t
   val make_unsub : subid -> Yaks_fe_sock_types.message Lwt.t
-  val make_eval : ?workspace:wsid -> Path.t -> Yaks_fe_sock_types.message Lwt.t
+  val make_reg_eval : ?workspace:wsid -> Path.t -> Yaks_fe_sock_types.message Lwt.t
+  val make_unreg_eval : ?workspace:wsid -> Path.t -> Yaks_fe_sock_types.message Lwt.t
+  val make_eval : ?multiplicity:int -> ?workspace:wsid -> Selector.t -> Yaks_fe_sock_types.message Lwt.t
   val make_values : correlationid -> (Path.t * Value.t) list -> Yaks_fe_sock_types.message Lwt.t
   val make_ok : correlationid -> Yaks_fe_sock_types.message Lwt.t
   val make_error : correlationid -> Yaks_fe_sock_codes.error_code -> Yaks_fe_sock_types.message Lwt.t

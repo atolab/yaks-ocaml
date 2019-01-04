@@ -10,8 +10,9 @@ type subid = string
 type listener_t = (Path.t * Value.t) list -> unit Lwt.t
 type eval_callback_t = Path.t -> properties -> Value.t Lwt.t
 
-let default_write_quorum = 0  (* meaning reply as soon as 1st Yaks acknowledges *)
-let default_read_quorum = 0   (* meaning reply as soon as 1st Yaks get 1 answer *)
+let default_write_quorum = 1  (* meaning reply as soon as 1 Yaks acknowledges the write *)
+let default_read_quorum = 1   (* meaning reply as soon as 1 answer is received for each matching path *)
+let default_multiplicity = 1   (* meaning Yaks calls 1 eval function per matching path *)
 
 module Message = struct
 
@@ -92,12 +93,29 @@ module Message = struct
     let payload = Yaks_fe_sock_types.YPathValueList values in 
     make_msg ~corrid Yaks_fe_sock_codes.VALUES [] Properties.empty payload
 
-  let make_eval ?workspace path =
+  let make_reg_eval ?workspace path =
     let properties = match workspace with
       | Some wsid -> Properties.singleton Yaks_properties.Admin.workspaceid wsid
       | None -> Properties.empty 
     in
     let payload = Yaks_fe_sock_types.YPath path in 
+    make_msg Yaks_fe_sock_codes.REG_EVAL [] properties payload
+
+  let make_unreg_eval ?workspace path =
+    let properties = match workspace with
+      | Some wsid -> Properties.singleton Yaks_properties.Admin.workspaceid wsid
+      | None -> Properties.empty 
+    in
+    let payload = Yaks_fe_sock_types.YPath path in 
+    make_msg Yaks_fe_sock_codes.UNREG_EVAL [] properties payload
+
+  let make_eval ?(multiplicity=default_multiplicity) ?workspace selector = 
+    ignore multiplicity;
+    let properties = match workspace with
+      | Some wsid -> Properties.singleton Yaks_properties.Admin.workspaceid wsid
+      | None -> Properties.empty 
+    in
+    let payload = Yaks_fe_sock_types.YSelector selector in 
     make_msg Yaks_fe_sock_codes.EVAL [] properties payload
 
 

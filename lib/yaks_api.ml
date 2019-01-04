@@ -15,13 +15,16 @@ type listener_t = (Path.t * Value.t) list -> unit Lwt.t
 
 type eval_callback_t = Path.t -> properties -> Value.t Lwt.t
 
+type transcoding_fallback = Fail | Drop | Keep
+
 module Workspace = struct
     type t = 
       { driver : Yaks_sock_driver.t
       ; wsid : wsid option 
       ; path: Path.t option }
 
-    let get ?quorum selector t =
+    let get ?quorum ?encoding ?fallback selector t =
+      let _ = ignore encoding and _ = ignore fallback in
       let _ = Logs_lwt.debug (fun m -> m "[YA]: GET on %s" (Selector.to_string selector)) in
       Yaks_sock_driver.process_get ?quorum ?workspace:t.wsid selector t.driver
 
@@ -45,22 +48,25 @@ module Workspace = struct
       let _ = Logs_lwt.debug (fun m -> m "[YA]: UNSUB %s" subid) in
       Yaks_sock_driver.process_unsubscribe subid t.driver
 
-    let eval path eval_callback t =
-      let _ = Logs_lwt.debug (fun m -> m "[YA]: EVAL %s" (Path.to_string path)) in
-      (* TODO: currently eval is registered  with absolute path, because the received selectors in GETs
-         will be absolutes and need to match the registerd evals.
-         Evolution: manage EvalsMap (and SubscriberMap) here (in API) rather than in driver.
-         Thus, the EVAL msg can be send with relative path, while registered with abs path locally here.
-      *)
-      let abspath = if Path.is_relative path then Path.add_prefix ~prefix:(Option.get t.path) path else path in
-      Yaks_sock_driver.process_eval ?workspace:t.wsid abspath eval_callback t.driver
+    let register_eval path eval_callback t =
+      let _ = Logs_lwt.debug (fun m -> m "[YA]: REG_EVAL %s" (Path.to_string path)) in
+      Yaks_sock_driver.process_register_eval ?workspace:t.wsid ?workpath:t.path path eval_callback t.driver
+
+    let unregister_eval path t =
+      let _ = Logs_lwt.debug (fun m -> m "[YA]: UNREG_EVAL %s" (Path.to_string path)) in
+      Yaks_sock_driver.process_unregister_eval ?workspace:t.wsid ?workpath:t.path path t.driver
+
+    let eval ?multiplicity ?encoding ?fallback selector t =
+      let _ = ignore encoding and _ = ignore fallback in
+      let _ = Logs_lwt.debug (fun m -> m "[YA]: EVAL on %s" (Selector.to_string selector)) in
+      Yaks_sock_driver.process_eval ?multiplicity ?workspace:t.wsid selector t.driver
 
 end
 
 module Admin = struct
   type t = { admin : Workspace.t }
 
-  let prefix = "_admin_"
+  let prefix = "@"
   let my_yaks = "local"
 
   let properties_of_value v = match v with
