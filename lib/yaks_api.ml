@@ -67,68 +67,58 @@ module Admin = struct
     | Value.PropertiesValue p -> p
     | _ -> Properties.singleton "value" (Value.to_string v)
 
-  let add_frontend ?yaks feid props t =
-    let yid = Option.get_or_default yaks my_yaks in
-    let path = Printf.sprintf "/%s/%s/frontend/%s" prefix yid feid in
+  let add_frontend ?(yaks=my_yaks) feid props t =
+    let path = Printf.sprintf "/%s/%s/frontend/%s" prefix yaks feid in
     Workspace.put ~quorum:1 (Path.of_string path) (Value.PropertiesValue props) t.admin
 
-  let get_frontends ?yaks t =
-    let yid = Option.get_or_default yaks my_yaks in
-    let sel = Printf.sprintf "/%s/%s/frontend/*" prefix yid in
+  let get_frontends ?(yaks=my_yaks) t =
+    let sel = Printf.sprintf "/%s/%s/frontend/*" prefix yaks in
     Workspace.get ~quorum:1 (Selector.of_string sel) t.admin
     >|= List.map (fun (p, v) ->
       let feid = Astring.with_range ~first:(String.length sel-2) (Path.to_string p) in
       let prop = properties_of_value v in
       (feid, prop))
 
-  let get_frontend ?yaks feid t =
-    let yid = Option.get_or_default yaks my_yaks in
-    let sel = Printf.sprintf "/%s/%s/frontend/%s" prefix yid feid in
+  let get_frontend ?(yaks=my_yaks) feid t =
+    let sel = Printf.sprintf "/%s/%s/frontend/%s" prefix yaks feid in
     Workspace.get ~quorum:1 (Selector.of_string sel) t.admin
     >|= (fun l -> Option.map (List.nth_opt l 0) (fun (_,v) -> properties_of_value v))
 
-  let remove_frontend ?yaks feid t =
-    let yid = Option.get_or_default yaks my_yaks in
-    let path = Printf.sprintf "/%s/%s/frontend/%s" prefix yid feid in
+  let remove_frontend ?(yaks=my_yaks) feid t =
+    let path = Printf.sprintf "/%s/%s/frontend/%s" prefix yaks feid in
     Workspace.remove ~quorum:1 (Path.of_string path) t.admin
 
 
-  let add_backend ?yaks beid props t =
-    let yid = Option.get_or_default yaks my_yaks in
-    let path = Printf.sprintf "/%s/%s/backend/%s" prefix yid beid in
+  let add_backend ?(yaks=my_yaks) beid props t =
+    let path = Printf.sprintf "/%s/%s/backend/%s" prefix yaks beid in
     Workspace.put ~quorum:1 (Path.of_string path) (Value.PropertiesValue props) t.admin
 
-  let get_backends ?yaks t =
-    let yid = Option.get_or_default yaks my_yaks in
-    let sel = Printf.sprintf "/%s/%s/backend/*" prefix yid in
+  let get_backends ?(yaks=my_yaks) t =
+    let sel = Printf.sprintf "/%s/%s/backend/*" prefix yaks in
     Workspace.get ~quorum:1 (Selector.of_string sel) t.admin
     >|= List.map (fun (p, v) ->
       let feid = Astring.with_range ~first:(String.length sel-2) (Path.to_string p) in
       let prop = properties_of_value v in
       (feid, prop))
 
-  let get_backend ?yaks beid t =
-    let yid = Option.get_or_default yaks my_yaks in
-    let sel = Printf.sprintf "/%s/%s/backend/%s" prefix yid beid in
+  let get_backend ?(yaks=my_yaks) beid t =
+    let sel = Printf.sprintf "/%s/%s/backend/%s" prefix yaks beid in
     Workspace.get ~quorum:1 (Selector.of_string sel) t.admin
     >|= (fun l -> Option.map (List.nth_opt l 0) (fun (_,v) -> properties_of_value v))
 
-  let remove_backend ?yaks beid t =
-    let yid = Option.get_or_default yaks my_yaks in
-    let path = Printf.sprintf "/%s/%s/backend/%s" prefix yid beid in
+  let remove_backend ?(yaks=my_yaks) beid t =
+    let path = Printf.sprintf "/%s/%s/backend/%s" prefix yaks beid in
     Workspace.remove ~quorum:1 (Path.of_string path) t.admin
 
 
-  let add_storage ?yaks stid ?backend props t =
-    let yid = Option.get_or_default yaks my_yaks in
+  let add_storage ?(yaks=my_yaks) stid ?backend props t =
     let beid = Option.get_or_default backend "auto" in
-    let path = Printf.sprintf "/%s/%s/backend/%s/storage/%s" prefix yid beid stid in
+    let path = Printf.sprintf "/%s/%s/backend/%s/storage/%s" prefix yaks beid stid in
     Workspace.put ~quorum:1 (Path.of_string path) (Value.PropertiesValue props) t.admin
 
-  let get_storages ?yaks ?backend t =
-    let yid = Option.get_or_default yaks my_yaks in
+  let get_storages ?(yaks=my_yaks) ?backend t =
     let beid = Option.get_or_default backend "*" in
-    let sel = Printf.sprintf "/%s/%s/backend/%s/storage/*" prefix yid beid in
+    let sel = Printf.sprintf "/%s/%s/backend/%s/storage/*" prefix yaks beid in
     Workspace.get ~quorum:1 (Selector.of_string sel) t.admin
     >|= List.map (fun (p, v) ->
       let path = Path.to_string p in
@@ -137,15 +127,13 @@ module Admin = struct
       let prop = properties_of_value v in
       (beid, prop))
 
-  let get_storage ?yaks stid t =
-    let yid = Option.get_or_default yaks my_yaks in
-    let sel = Printf.sprintf "/%s/%s/backend/*/storage/%s" prefix yid stid in
+  let get_storage ?(yaks=my_yaks) stid t =
+    let sel = Printf.sprintf "/%s/%s/backend/*/storage/%s" prefix yaks stid in
     Workspace.get ~quorum:1 (Selector.of_string sel) t.admin
     >|= (fun l -> Option.map (List.nth_opt l 0) (fun (_,v) -> properties_of_value v))
 
-  let remove_storage ?yaks stid t =
-    let yid = Option.get_or_default yaks my_yaks in
-    let sel = Printf.sprintf "/%s/%s/backend/*/storage/%s" prefix yid stid in
+  let remove_storage ?(yaks=my_yaks) stid t =
+    let sel = Printf.sprintf "/%s/%s/backend/*/storage/%s" prefix yaks stid in
     let path = 
       Workspace.get ~quorum:1 (Selector.of_string sel) t.admin
       >|= (fun l -> Option.map (List.nth_opt l 0) (fun (p,_) -> p))
@@ -155,10 +143,9 @@ module Admin = struct
     | None -> Lwt.return_unit
 
   
-  let get_sessions ?yaks ?frontend t =
-    let yid = Option.get_or_default yaks my_yaks in
+  let get_sessions ?(yaks=my_yaks) ?frontend t =
     let feid = Option.get_or_default frontend "*" in
-    let sel = Printf.sprintf "/%s/%s/frontend/%s/session/*" prefix yid feid in
+    let sel = Printf.sprintf "/%s/%s/frontend/%s/session/*" prefix yaks feid in
     Workspace.get ~quorum:1 (Selector.of_string sel) t.admin
     >|= List.map (fun (p, v) ->
       let path = Path.to_string p in
@@ -167,9 +154,8 @@ module Admin = struct
       let prop = properties_of_value v in
       (beid, prop))
 
-  let close_session ?yaks sid t =
-    let yid = Option.get_or_default yaks my_yaks in
-    let sel = Printf.sprintf "/%s/%s/frontend/*/session/%s" prefix yid sid in
+  let close_session ?(yaks=my_yaks) sid t =
+    let sel = Printf.sprintf "/%s/%s/frontend/*/session/%s" prefix yaks sid in
     let path = 
       Workspace.get ~quorum:1 (Selector.of_string sel) t.admin
       >|= (fun l -> Option.map (List.nth_opt l 0) (fun (p,_) -> p))
@@ -179,9 +165,8 @@ module Admin = struct
     | None -> Lwt.return_unit
 
 
-  let get_subscriptions ?yaks sid t =
-    let yid = Option.get_or_default yaks my_yaks in
-    let sel = Printf.sprintf "/%s/%s/frontend/*/session/%s" prefix yid sid in
+  let get_subscriptions ?(yaks=my_yaks) sid t =
+    let sel = Printf.sprintf "/%s/%s/frontend/*/session/%s" prefix yaks sid in
     Workspace.get ~quorum:1 (Selector.of_string sel) t.admin
     >|= List.map (fun (_, v) -> Selector.of_string @@ Value.to_string v)
 
