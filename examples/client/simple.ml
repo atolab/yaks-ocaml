@@ -1,11 +1,10 @@
 open Apero
 open Yaks_ocaml
+open Yaks 
 open Lwt.Infix
+
 let usage () = ignore( print_endline "USAGE:\n\t simple <yaks_address> <yaks_port>\n" )
 
-let (~//)  = Yaks.Path.of_string  
-let (~/*)  = Yaks.Selector.of_string  
-let (~$) = Yaks.Value.of_string
 
 let observer data = 
   Lwt_io.printf ">>>> [APP] OBSERVER\n"
@@ -19,7 +18,8 @@ let eval_callback path props =
   Lwt.return @@ Yaks.Value.StringValue ("Hello "^name^" !!")
 
 
-let print_admin_space workspace =
+let print_admin_space workspace =     
+  
   let sel = Yaks.Selector.of_string "/@/local/**" in
   Yaks.Workspace.get sel workspace
   >|= List.sort (fun (p,_) (p',_) -> Yaks.Path.compare p p')
@@ -40,8 +40,7 @@ let main argv =
 
   let%lwt _ = Lwt_io.printf "\n<<<< [APP] Creating workspace on %s\n"  "/afos/0" in
   let%lwt _ = Lwt_io.read_line Lwt_io.stdin in
-    
-  let%lwt workspace = Yaks.workspace   ~// "/afos/0"  api in
+  let%lwt workspace = Yaks.workspace (Yaks.Path.of_string "/afos/0") api in
 
   let%lwt _ = print_admin_space workspace in
 
@@ -54,22 +53,20 @@ let main argv =
 
   let%lwt _ = Lwt_io.printf "\n<<<< [APP] Register eval for to %s\n"  "/afos/0/test_eval" in
   let%lwt _ = Lwt_io.read_line Lwt_io.stdin in
-  let%lwt _ = Yaks.Workspace.register_eval (~// "test_eval") eval_callback workspace in
+  let%lwt _ = Yaks.Workspace.register_eval (Yaks.Path.of_string "test_eval") eval_callback workspace in
 
   let%lwt _ = print_admin_space workspace in
 
   let%lwt _ = Lwt_io.printf "\n<<<< [APP] Subscribing to %s\n"  "/afos/0/**" in
   let%lwt _ = Lwt_io.read_line Lwt_io.stdin in
-  let%lwt subid = Yaks.Workspace.subscribe ~listener:observer ~/* "**" workspace in
+  let%lwt subid = Yaks.Workspace.subscribe ~listener:observer (Yaks.Selector.of_string "**") workspace in
 
   let%lwt _ = print_admin_space workspace in
 
   let%lwt _ = Lwt_io.printf "\n<<<< [APP] Put %s -> %s\n" "/afos/0" "hello!" in
   let%lwt _ = Lwt_io.read_line Lwt_io.stdin in
   let t0 = Unix.gettimeofday () in 
-  let%lwt _ = Yaks.Workspace.put 
-      (Yaks.Path.of_string "/afos/0/1")
-      (Apero.Result.get (~$ "hello!" Yaks.Value.Raw_Encoding)) workspace in
+  let%lwt _ = Yaks.Workspace.put (Yaks.Path.of_string "/afos/0/1") (Yaks.Value.StringValue "hello!") workspace in
   let t1 = Float.sub (Unix.gettimeofday ()) t0 in
   let%lwt _ = Lwt_io.printf "\n<<<< [APP] Put took %f\n" t1 in
 
@@ -136,4 +133,3 @@ let _ =
     begin
       Lwt_main.run (main argv)
     end
-
