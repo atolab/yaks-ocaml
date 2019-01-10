@@ -22,7 +22,8 @@ type eval_callback_t = Path.t -> properties -> Value.t Lwt.t
 (** Callback function registered as an eval *)
 
 type transcoding_fallback = Fail | Drop | Keep
-(** Action to perform in [get] operation when the transcoding of a received [Value] into the requested encoding fails.
+(** Action to perform in [get] operation when the transcoding of a received [Value] 
+    into the requested encoding fails.
     [Fail] means the [get] operation will return an error.
     [Drop] means the [get] operation will drop from the returned result the values which can't be transcoded.
     [Keep] means the [get] operation will return the values which can't be transcoded with their original encoding. *)
@@ -32,73 +33,92 @@ module Workspace : sig
   type t    
 
   val get : ?quorum:int -> ?encoding:Value.encoding -> ?fallback:transcoding_fallback -> Selector.t -> t -> (Path.t * Value.t) list Lwt.t
-  (** [get quorum encoding fallback s ws] gets the set of tuples {e \{ <path,value> \} } available in YAKS for which {e path} matches the {b selector} [s], where
-      the selector [s] can be relative or absolute to the {e workspace} [ws]. 
+  (** [get quorum encoding fallback s ws] gets the set of tuples {e \{ <path,value> \} } available in YAKS for which {e path} 
+    matches the {b selector} [s], where
+    the selector [s] can be relative or absolute to the {e workspace} [ws]. 
       
-      If a [quorum] is provided, then [get] will complete succesfully if and only if a number [quorum] of independent and complete storage set 
-      exist. This ensures that if there is a  {e \{ <path,value> \} } stored in YAKS for which the {e path} matches the selector [s], then
-      there are at least [quorum] idependent copies of this element stored in YAKS. Of these [quorum] idependent copies, the one returned to the
-      application is the most recent version.
+    If a [quorum] is provided, then [get] will complete succesfully if and only if a number [quorum] of independent and complete storage set 
+    exist. This ensures that if there is a  {e \{ <path,value> \} } stored in YAKS for which the {e path} matches the selector [s], then
+    there are at least [quorum] idependent copies of this element stored in YAKS. Of these [quorum] idependent copies, the one returned to the
+    application is the most recent version.
 
-      If no quorum is provided, notice this is the default behaviour, then the get will succeed event if there isn't a set
-      of storages that covers the selector. 
+    If no quorum is provided, notice this is the default behaviour, then the get will succeed event if there isn't a set
+    of storages that covers the selector. 
 
-      The [encoding]  allows an application to request values to be encoded in a specific format, among those supported by YAKS 
-      which currently are:
+    The [encoding]  allows an application to request values to be encoded in a specific format, among those supported by YAKS 
+    which currently are:
 
-      - Raw_Encoding
-      - String_Encoding
-      - Properties_encoding
-      - Json_Encoding  
-      - Sql_Encoding  
+    - Raw_Encoding
+    - String_Encoding
+    - Properties_encoding
+    - Json_Encoding  
+    - Sql_Encoding  
 
-      If no encoding is provided, this is the default behaviour,  then YAKS will not try to perform any transcoding and will 
-      return matching values in the encoding in which they are stored.
+    If no encoding is provided, this is the default behaviour,  then YAKS will not try to perform any transcoding and will 
+    return matching values in the encoding in which they are stored.
     
-      The [fallback]  controls what happens for those values that cannot be transcoded into the desired encoding, the 
-      available options are:
-      - Fail: the call fails if some value cannot be transcoded.
-      - Drop: values that cannot be transcoded are dropped.
-      - Keep: values that cannot be transcoded are kept and left for the application to deal with.  *)
+    The [fallback]  controls what happens for those values that cannot be transcoded into the desired encoding, the 
+    available options are:
+    - Fail: the call fails if some value cannot be transcoded.
+    - Drop: values that cannot be transcoded are dropped.
+    - Keep: values that cannot be transcoded are kept and left for the application to deal with.  *)
 
   val put : ?quorum:int -> Path.t -> Value.t -> t -> unit Lwt.t
-  (** [put quorum p v w] publishes a path [p] with an associated value [v] on Yaks.
-      [p] can be absolute or relative to the workspace [w].
-      The [quorum] (default value is 1) is used by Yaks to wait for a certain number of acknowledgments from Yaks' storages that should store the path/value. *)
+  (** [put quorum path value ws]  
+    - stores the tuple {e <path,value> } on all {e storages} in YAKS whose {e selector} 
+    matches [path], and
+    
+    - causes the notification of all {e subscriptions} whose selector matches [path].
+    If a [quorum] is provided then the [put] will success only if and only if a number 
+    [quorum] of independent storages exist that match [path]. If such a set exist, the 
+    put operation will complete only ater the  tuple {e <path,value> } 
+    has been written on all these storages.
+
+    If no quorum is provided, then no assumptions are made, as a consequence a [put] will succeed even if there are currently
+    no storages matching it. In this case the only effect of this operation will be that of triggering matching
+    subscriber, if any exist. *)
+  
 
   val update: ?quorum:int -> Path.t -> Value.t -> t -> unit Lwt.t
-  (** [update quorum p v w] publishes a path [p] with an associated delta-value [v] on Yaks.
-      [p] can be absolute or relative to the workspace [w].
-      The [quorum] (default value is 1) is used by Yaks to wait for a certain number of acknowledgments from Yaks' storages that should store the path/delta-value. *)
+  (** [update quorum path value ws] allows to {! put} a delta, thus avoiding to distribute the entire value. *) 
 
   val remove: ?quorum:int -> Path.t -> t  -> unit Lwt.t
-  (** [remove quorum p w] removes from Yaks' storages the path [p] and the associated value. 
-      [p] can be absolute or relative to the workspace [w].
-      The [quorum] (default value is 1) is used by Yaks to wait for a certain number of acknowledgments from Yaks' storages that should remove the path/value. *)
+  (** [remove quorum path ws] removes from all  Yaks's storages the tuple having the given [path].
+    [path] can be absolute or relative to the workspace [ws].
+    If a [quorum] is provided, then the [remove] will complete only after having successfully removed the tuple 
+    from [quorum] storages. *)
 
   val subscribe: ?listener:listener_t -> Selector.t -> t -> subid Lwt.t
-  (** [subscribe listener s w] register a subscription to all publications matching the selector [s]. A subscription identifier is returned.
-      [s] can be absolute or relative to the workspace [w].
-      If specified, the [listener] callback will be called with the published path/value *)
+  (** [subscribe listener selector ws] registers a subscription to tuples whose path matches the selector [s]. 
+  
+    A subscription identifier is returned.
+    The [selector] can be absolute or relative to the workspace [ws]. If specified, 
+    the [listener] callback will be called for {! put} and {! update} on tuples whose
+    path matches the subscription [selector] *)
 
   val unsubscribe: subid -> t -> unit Lwt.t
   (** [unsubscribe subid w] unregisters a previous subscription with the identifier [subid] *)
 
   val register_eval : Path.t -> eval_callback_t -> t -> unit Lwt.t
-  (** [register_eval p e w] registers an evaluation function [e] under the path [p].
-      [p] can be absolute or relative to the workspace [w]. *)
+  (** [register_eval path eval ws] registers an evaluation function [eval] under the provided [path].
+    The [path] can be absolute or relative to the workspace [ws]. *)
 
   val unregister_eval : Path.t -> t  -> unit Lwt.t
-  (** [register_eval p w] unregisters an previously registered evaluation function under the path [p].
-      [p] can be absolute or relative to the workspace [w]. *)
+  (** [register_eval path ws] unregisters an previously registered evaluation function under the give [path].
+    The [path] can be absolute or relative to the workspace [ws]. *)
 
   val eval : ?multiplicity:int -> ?encoding:Value.encoding -> ?fallback:transcoding_fallback -> Selector.t -> t -> (Path.t * Value.t) list Lwt.t
-  (** [eval multiplicity encoding fallback s w] calls all the evaluation functions registered with a path matching the selector [s].
-      If several evaluation function are registerd with the same path (by different Yaks clients), Yaks will call N functions where N=[multiplicity] (default value is 1).
-      Note that in such case, the returned path/value list will contain N time each path with the different values returned by the different dunction calls.
-      The [encoding] indicates the expected encoding of the resulting values. If the original values have a different encoding, Yaks will try to transcode them into the expected encoding.
-      By default, if no encoding is specified, the vaules are returned with their original encoding.
-      The [fallback] indicates the action that Yakss will perform if the transcoding of a value fails. *)
+  (** [eval multiplicity encoding fallback selector ws] requests the evaluation of registered evals whose registration 
+    {e path} matches the given [selector].
+    
+    If several evaluation function are registerd with the same path (by different Yaks clients), then Yaks will call N functions 
+    where N=[multiplicity] (default value is 1).
+    Note that in such case, the returned {e <path/value> } list will contain N time each path with the different 
+    values returned by each evaluation.
+    The [encoding] indicates the expected encoding of the resulting values. If the original values have a different encoding, 
+    Yaks will try to transcode them into the expected encoding.
+    By default, if no encoding is specified, the values are returned with their original encoding.
+    The [fallback] indicates the action that Yakss will perform if the transcoding of a value fails. *)
 
 end
 
