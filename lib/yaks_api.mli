@@ -32,12 +32,34 @@ module Workspace : sig
   type t    
 
   val get : ?quorum:int -> ?encoding:Value.encoding -> ?fallback:transcoding_fallback -> Selector.t -> t -> (Path.t * Value.t) list Lwt.t
-  (** [get quorum encoding fallback s w] requests Yaks to return a list of the stored paths/values where all the paths match the selector [s].
-      [s] can be absolute or relative to the workspace [w].
-      The [quorum] (default value is 1) is used by Yaks to decide for each matching path the number of answer from storages to wait before returning the associated value.
-      The [encoding] indicates the expected encoding of the resulting values. If the original values have a different encoding, Yaks will try to transcode them into the expected encoding.
-      By default, if no encoding is specified, the vaules are returned with their original encoding.
-      The [fallback] indicates the action that Yakss will perform if the transcoding of a value fails. *)
+  (** [get quorum encoding fallback s ws] gets the set of tuples {e \{ <path,value> \} } available in YAKS for which {e path} matches the {b selector} [s], where
+      the selector [s] can be relative or absolute to the {e workspace} [ws]. 
+      
+      If a [quorum] is provided, then [get] will complete succesfully if and only if a number [quorum] of independent and complete storage set 
+      exist. This ensures that if there is a  {e \{ <path,value> \} } stored in YAKS for which the {e path} matches the selector [s], then
+      there are at least [quorum] idependent copies of this element stored in YAKS. Of these [quorum] idependent copies, the one returned to the
+      application is the most recent version.
+
+      If no quorum is provided, notice this is the default behaviour, then the get will succeed event if there isn't a set
+      of storages that covers the selector. 
+
+      The [encoding]  allows an application to request values to be encoded in a specific format, among those supported by YAKS 
+      which currently are:
+
+      - Raw_Encoding
+      - String_Encoding
+      - Properties_encoding
+      - Json_Encoding  
+      - Sql_Encoding  
+
+      If no encoding is provided, this is the default behaviour,  then YAKS will not try to perform any transcoding and will 
+      return matching values in the encoding in which they are stored.
+    
+      The [fallback]  controls what happens for those values that cannot be transcoded into the desired encoding, the 
+      available options are:
+      - Fail: the call fails if some value cannot be transcoded.
+      - Drop: values that cannot be transcoded are dropped.
+      - Keep: values that cannot be transcoded are kept and left for the application to deal with.  *)
 
   val put : ?quorum:int -> Path.t -> Value.t -> t -> unit Lwt.t
   (** [put quorum p v w] publishes a path [p] with an associated value [v] on Yaks.
