@@ -89,14 +89,23 @@ let receiver_loop (driver:t) =
     | (NOTIFY, YNotification (subid, data)) ->
       MVar.read driver >>= fun self ->
       (match ListenersMap.find_opt subid self.subscribers with
-      | Some cb -> cb data
+      | Some cb ->
+        (* Run listener's callback in future (catching exceptions) *)
+        let _ =  Lwt.try_bind (fun () -> let%lwt _ = Logs_lwt.debug (fun m -> m "Notify received. Call listener for subscription %s" subid) in cb data)
+          (fun () -> Lwt.return_unit)
+          (fun ex -> let%lwt _ = Logs_lwt.warn (fun m -> m "Listener's callback of subscription %s raised an exception: %s\n %s" subid (Printexc.to_string ex) (Printexc.get_backtrace ())) in Lwt.return_unit)
+        in
+        (* Return unit immediatly to release socket reading thread *)
+        Lwt.return_unit
       | None ->  
         let%lwt _ = Logs_lwt.debug (fun m -> m "Received notification with unknown subscriberid %s" subid) in
         Lwt.return_unit)
+
     | (EVAL, YSelector s) ->
       process_eval s driver >>= fun results ->
       make_values msg.header.corr_id results >>= fun rmsg ->
       send_to_socket rmsg self.sock
+
     | (_, _) -> MVar.guarded driver @@ (fun self ->
       (match WorkingMap.find_opt msg.header.corr_id self.working_set with 
       | Some resolver ->  let _ = Lwt.wakeup_later resolver msg in
@@ -104,6 +113,7 @@ let receiver_loop (driver:t) =
       | None -> let%lwt _ = Logs_lwt.debug (fun m -> m "Received message with unknown correlation id %d" @@ Vle.to_int msg.header.corr_id ) in
         MVar.return () self)
       ))
+
   | Error e -> 
     let%lwt _ = Logs_lwt.err (fun m -> m "Failed in parsing message %s" (Apero.show_error e)) in
     Lwt.fail @@ Exception e
