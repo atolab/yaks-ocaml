@@ -60,17 +60,17 @@ let send_to_socket msg sock =
 let process_eval selector (driver:t) =
   let open Apero in
   MVar.read driver >>= fun self ->
-  match Selector.properties selector with
-  | None -> Lwt.fail_with @@ Printf.sprintf "[YAS]: Invalid selector (without properties) for a eval : %s" (Selector.to_string selector)
-  | Some props ->
-      let params = Properties.of_string ~prop_sep:"&" props in
-      let matching_evals = EvalsMap.filter (fun path _ -> Selector.is_matching_path path selector) self.evals in
-      if (EvalsMap.is_empty matching_evals) then
-        let%lwt _ = Logs_lwt.warn (fun m -> m "No matching eval for GET on: %s" (Selector.to_string selector)) in
-        Lwt.return []
-      else
-        EvalsMap.fold (fun path eval l -> (path,eval)::l) matching_evals [] |>
-        Lwt_list.map_p (fun (path, eval) -> eval path params >>= fun result -> Lwt.return (path, result) )
+  let params = match Selector.properties selector with
+    | Some props -> Properties.of_string ~prop_sep:"&" props
+    | None -> Properties.empty
+  in
+  let matching_evals = EvalsMap.filter (fun path _ -> Selector.is_matching_path path selector) self.evals in
+  if (EvalsMap.is_empty matching_evals) then
+    let%lwt _ = Logs_lwt.warn (fun m -> m "No matching eval for GET on: %s" (Selector.to_string selector)) in
+    Lwt.return []
+  else
+    EvalsMap.fold (fun path eval l -> (path,eval)::l) matching_evals [] |>
+    Lwt_list.map_p (fun (path, eval) -> eval path params >>= fun result -> Lwt.return (path, result) )
 
 let receiver_loop (driver:t) = 
   let open Apero in
@@ -102,9 +102,18 @@ let receiver_loop (driver:t) =
         Lwt.return_unit)
 
     | (EVAL, YSelector s) ->
-      process_eval s driver >>= fun results ->
-      make_values msg.header.corr_id results >>= fun rmsg ->
-      send_to_socket rmsg self.sock
+      (* Process eval in future (catching exceptions) *)
+      let _ = Lwt.try_bind
+        (fun () -> process_eval s driver >>= fun results ->
+        make_values msg.header.corr_id results >>= fun rmsg ->
+        send_to_socket rmsg self.sock)
+          (fun () -> Lwt.return_unit)
+          (fun ex -> let%lwt _ = Logs_lwt.warn (fun m -> m "Eval's callback raised an exception: %s\n %s" (Printexc.to_string ex) (Printexc.get_backtrace ())) in
+            make_error msg.header.corr_id INTERNAL_SERVER_ERROR >>= fun rmsg ->
+            send_to_socket rmsg self.sock)
+      in
+      (* Return unit immediatly to release socket reading thread *)
+      Lwt.return_unit
 
     | (_, _) -> MVar.guarded driver @@ (fun self ->
       (match WorkingMap.find_opt msg.header.corr_id self.working_set with 
