@@ -44,10 +44,10 @@ let main argv =
 
   let%lwt _ = print_admin_space workspace in
 
-  let%lwt _ = Lwt_io.printf "\n<<<< [APP] Creating storage on %s\n"  "/afos/0" in
+  let%lwt _ = Lwt_io.printf "\n<<<< [APP] Creating storage on %s\n"  "/afos/0/**" in
   let%lwt admin = Yaks.admin api in
   let%lwt _ = Lwt_io.read_line Lwt_io.stdin in
-  let%lwt _ = Yaks.Admin.add_storage "AFOS-0" (Properties.singleton "selector" "/afos/0") admin in
+  let%lwt _ = Yaks.Admin.add_storage "AFOS-0" (Properties.singleton "selector" "/afos/0/**") admin in
 
   let%lwt _ = print_admin_space workspace in
 
@@ -63,14 +63,14 @@ let main argv =
 
   let%lwt _ = print_admin_space workspace in
 
-  let%lwt _ = Lwt_io.printf "\n<<<< [APP] Put %s -> %s\n" "/afos/0" "hello!" in
+  let%lwt _ = Lwt_io.printf "\n<<<< [APP] Put %s -> %s\n" "/afos/0/1" "hello!" in
   let%lwt _ = Lwt_io.read_line Lwt_io.stdin in
   let t0 = Unix.gettimeofday () in 
   let%lwt _ = Yaks.Workspace.put (Yaks.Path.of_string "/afos/0/1") (Yaks.Value.StringValue "hello!") workspace in
   let t1 = Float.sub (Unix.gettimeofday ()) t0 in
   let%lwt _ = Lwt_io.printf "\n<<<< [APP] Put took %f\n" t1 in
 
-  let%lwt _ = Lwt_io.printf "\n<<<< [APP] Getting %s \n" "/afos/0" in
+  let%lwt _ = Lwt_io.printf "\n<<<< [APP] Getting %s \n" "/afos/0/*" in
   let%lwt _ = Lwt_io.read_line Lwt_io.stdin in
   Yaks.Workspace.get (Yaks.Selector.of_string "*") workspace
   >>= fun data -> List.iter (
@@ -81,7 +81,7 @@ let main argv =
 
   let%lwt _ = Lwt_io.printf "\n<<<< [APP] Calling eval %s \n" "/afos/0/test_eval" in
   let%lwt _ = Lwt_io.read_line Lwt_io.stdin in
-  let%lwt _ = Yaks.Workspace.eval (Yaks.Selector.of_string "/afos/0/test_eval") workspace
+  let%lwt _ = Yaks.Workspace.eval (Yaks.Selector.of_string "test_eval") workspace
   >>= fun data -> List.iter (
     fun (k,v) -> 
       ignore @@ Lwt_io.printf ">>>> [APP] K %s - V: %s\n"  (Yaks.Path.to_string k) (Yaks.Value.to_string v);
@@ -90,7 +90,7 @@ let main argv =
   
   let%lwt _ = Lwt_io.printf "\n<<<< [APP] Calling eval %s with name=Bob\n" "/afos/0/test_eval" in
   let%lwt _ = Lwt_io.read_line Lwt_io.stdin in
-  let%lwt _ =Yaks.Workspace.eval (Yaks.Selector.of_string "/afos/0/test_eval?(name=Bob)") workspace
+  let%lwt _ =Yaks.Workspace.eval (Yaks.Selector.of_string "test_eval?(name=Bob)") workspace
   >>= fun data -> List.iter (
     fun (k,v) -> 
       ignore @@ Lwt_io.printf ">>>> [APP] K %s - V: %s\n"  (Yaks.Path.to_string k) (Yaks.Value.to_string v);
