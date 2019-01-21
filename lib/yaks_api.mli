@@ -186,6 +186,24 @@ module Admin : sig
 
 end
 
+module Infix : sig
+  
+  val (~//) : string -> Path.t
+  (** [~// s] returns [s] as a Path if it's valid. Otherwise it raises an [Exception].
+      Note that the Path's string is sanitized (i.e. it's trimmed meaningless '/' are removed).
+      This operator is equal to { Path.of_string }. *)
+
+  val (~/*) : string -> Selector.t
+  (** [~/* s] returns [s] as a Selector if it's valid. Otherwise it raises an [Exception].
+      Note that the expression is sanitized (i.e. it's trimmed meaningless '/' are removed)
+      This operator is equal to { Selector.of_string }. *)
+
+  val (~$) : string -> Value.t
+  (** [~$ s] returns [s] as a Value with a { Value.String_Encoding } as encoding.
+      This operator is equal to { Value.of_string [s] Value.String_Encoding }. *)
+
+end
+
 
 type t
 

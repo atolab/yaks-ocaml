@@ -178,43 +178,50 @@ module Admin = struct
 
 end
 
-(* module Yaks = struct *)
-  type t =
-    { endpoint : Apero_net.Locator.t
-    ; driver : Yaks_sock_driver.t }
+module Infix = struct
 
-  let login endpoint props = 
-    let open Apero_net.Locator in
-    match endpoint with
-    | TcpLocator _ as ep -> 
-      let _ = ignore @@ Logs_lwt.info (fun m -> m "[YAS]: Connecting to: %s" (Apero_net.Locator.to_string ep)) in
-      Yaks_sock_driver.create (endpoint) >>= fun driver ->
-      let t = {endpoint = ep; driver} in
-      Lwt.try_bind
-        (fun () -> Yaks_sock_driver.process_login props driver)
-        (fun () -> Lwt.return t)
-        (fun ex -> let%lwt _ = Yaks_sock_driver.destroy driver in
-          Lwt.fail_with @@ "Login failed: "^(Printexc.to_string ex))
-    | UdpLocator _ as ep -> 
-      let _ = ignore @@ Logs_lwt.err (fun m -> m "[YAS]: Locator %s is unsupported" (Apero_net.Locator.to_string ep)) in
-      let e = `ValidationError (`Msg ("Invalid Locator, only TCP supported")) in
-      Lwt.fail @@ Exception e
+  let (~//) = Path.of_string
+  let (~/*) = Selector.of_string
+  let (~$) s = Value.of_string s Value.String_Encoding |> Result.get
+
+end
 
 
-  let logout t =
-    Yaks_sock_driver.process_logout t.driver >>= fun () ->
-    Yaks_sock_driver.destroy t.driver
+type t =
+  { endpoint : Apero_net.Locator.t
+  ; driver : Yaks_sock_driver.t }
 
-  let get_id _ = "local"
+let login endpoint props = 
+  let open Apero_net.Locator in
+  match endpoint with
+  | TcpLocator _ as ep -> 
+    let _ = ignore @@ Logs_lwt.info (fun m -> m "[YAS]: Connecting to: %s" (Apero_net.Locator.to_string ep)) in
+    Yaks_sock_driver.create (endpoint) >>= fun driver ->
+    let t = {endpoint = ep; driver} in
+    Lwt.try_bind
+      (fun () -> Yaks_sock_driver.process_login props driver)
+      (fun () -> Lwt.return t)
+      (fun ex -> let%lwt _ = Yaks_sock_driver.destroy driver in
+        Lwt.fail_with @@ "Login failed: "^(Printexc.to_string ex))
+  | UdpLocator _ as ep -> 
+    let _ = ignore @@ Logs_lwt.err (fun m -> m "[YAS]: Locator %s is unsupported" (Apero_net.Locator.to_string ep)) in
+    let e = `ValidationError (`Msg ("Invalid Locator, only TCP supported")) in
+    Lwt.fail @@ Exception e
 
-  let workspace path t =
-    Yaks_sock_driver.process_workspace path t.driver >|=
-    fun wsid : Workspace.t -> { driver=t.driver; wsid=Some wsid; path=Some path }
 
-  let admin t : Admin.t Lwt.t = 
-    let w : Workspace.t = { driver=t.driver; wsid=None; path=None } in
-    let a : Admin.t = { admin=w } in
-    Lwt.return a
+let logout t =
+  Yaks_sock_driver.process_logout t.driver >>= fun () ->
+  Yaks_sock_driver.destroy t.driver
 
-(* end *)
+let get_id _ = "local"
+
+let workspace path t =
+  Yaks_sock_driver.process_workspace path t.driver >|=
+  fun wsid : Workspace.t -> { driver=t.driver; wsid=Some wsid; path=Some path }
+
+let admin t : Admin.t Lwt.t = 
+  let w : Workspace.t = { driver=t.driver; wsid=None; path=None } in
+  let a : Admin.t = { admin=w } in
+  Lwt.return a
+
 
