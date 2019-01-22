@@ -61,7 +61,7 @@ let process_eval selector (driver:t) =
   let open Apero in
   MVar.read driver >>= fun self ->
   let params = match Selector.properties selector with
-    | Some props -> Properties.of_string ~prop_sep:"&" props
+    | Some props -> Properties.of_string props
     | None -> Properties.empty
   in
   let matching_evals = EvalsMap.filter (fun path _ -> Selector.is_matching_path path selector) self.evals in
