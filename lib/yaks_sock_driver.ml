@@ -124,7 +124,7 @@ let receiver_loop (driver:t) =
         else
           let _ = Lwt.wakeup_later resolver msg_list in
           MVar.return () {self with working_set = WorkingMap.remove msg.header.corr_id self.working_set}
-      | None -> let%lwt _ = Logs_lwt.debug (fun m -> m "Received message with unknown correlation id %d" @@ Vle.to_int msg.header.corr_id ) in
+      | None -> let%lwt _ = Logs_lwt.warn (fun m -> m "Received message with unknown correlation id %d" @@ Vle.to_int msg.header.corr_id ) in
         MVar.return () self)
       ))
 
