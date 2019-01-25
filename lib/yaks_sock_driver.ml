@@ -10,7 +10,7 @@ module EvalsMap = Map.Make(Path)
 
 type state = {
   sock : Lwt_unix.file_descr
-; working_set : Yaks_fe_sock_types.message Lwt.u WorkingMap.t
+; working_set : (Yaks_fe_sock_types.message list Lwt.u * Yaks_fe_sock_types.message list) WorkingMap.t
 ; subscribers : listener_t ListenersMap.t
 ; evals : eval_callback_t EvalsMap.t
 }
@@ -117,8 +117,13 @@ let receiver_loop (driver:t) =
 
     | (_, _) -> MVar.guarded driver @@ (fun self ->
       (match WorkingMap.find_opt msg.header.corr_id self.working_set with 
-      | Some resolver ->  let _ = Lwt.wakeup_later resolver msg in
-        MVar.return () {self with working_set = WorkingMap.remove msg.header.corr_id self.working_set}
+      | Some (resolver, msg_list) ->
+        let msg_list = List.append msg_list [msg] in
+        if (Yaks_fe_sock_types.has_incomplete_flag msg.header.flags) then
+          MVar.return () {self with working_set = WorkingMap.add msg.header.corr_id (resolver, msg_list) self.working_set}
+        else
+          let _ = Lwt.wakeup_later resolver msg_list in
+          MVar.return () {self with working_set = WorkingMap.remove msg.header.corr_id self.working_set}
       | None -> let%lwt _ = Logs_lwt.debug (fun m -> m "Received message with unknown correlation id %d" @@ Vle.to_int msg.header.corr_id ) in
         MVar.return () self)
       ))
@@ -147,20 +152,24 @@ let process (msg:Yaks_fe_sock_types.message) driver =
   let promise, completer = Lwt.wait () in
   send_to_socket msg self.sock
   >>= fun _ ->
-  MVar.return_lwt promise {self with working_set = WorkingMap.add msg.header.corr_id completer self.working_set}
+  MVar.return_lwt promise {self with working_set = WorkingMap.add msg.header.corr_id (completer,[]) self.working_set}
 
-let check_reply_ok corr_id (replymsg:Yaks_fe_sock_types.message) =
-  if replymsg.header.corr_id <> corr_id then
-    Lwt.fail_with "Correlation Id is different!"
+let check_reply_ok corr_id (replymsgs:Yaks_fe_sock_types.message list) =
+  if List.length replymsgs <> 1 then
+    Lwt.fail_with @@ Printf.sprintf "[YAS]: Expected 1 OK reply, but get %d" (List.length replymsgs)
   else
-    let open Yaks_fe_sock_codes in
-    match (replymsg.header.mid, replymsg.body) with
-    | (OK, YEmpty) -> Lwt.return_unit
-    | (ERROR, YErrorInfo e) ->
-      let errno = Apero.Vle.to_int e in
-      Lwt.fail_with @@ Printf.sprintf "[YAS]: Received ERROR reply with ErrNo: %d" errno
-    | (_, _) ->
-      Lwt.fail_with @@ Printf.sprintf "[YAS]: Received unexpected reply!!"
+    let replymsg = List.hd replymsgs in
+    if replymsg.header.corr_id <> corr_id then
+      Lwt.fail_with "Correlation Id is different!"
+    else
+      let open Yaks_fe_sock_codes in
+      match (replymsg.header.mid, replymsg.body) with
+      | (OK, YEmpty) -> Lwt.return_unit
+      | (ERROR, YErrorInfo e) ->
+        let errno = Apero.Vle.to_int e in
+        Lwt.fail_with @@ Printf.sprintf "[YAS]: Received ERROR reply with ErrNo: %d" errno
+      | (_, _) ->
+        Lwt.fail_with @@ Printf.sprintf "[YAS]: Received unexpected reply!!"
 
 let process_login props (driver:t) =
   let _ = Logs_lwt.info (fun m -> m "[YASD]: LOGIN") in
@@ -178,27 +187,36 @@ let process_workspace path (driver:t) =
   let _ = Logs_lwt.info (fun m -> m "[YASD]: WORKSPACE") in
   make_workspace path
   >>= fun msg -> process msg driver
-  >>= fun rmsg ->
-  if rmsg.header.corr_id <> msg.header.corr_id then
-    Lwt.fail_with "Correlation Id is different!"
-  else
-    let wsid = Apero.Properties.find Yaks_properties.Admin.workspaceid rmsg.header.properties in
-    Lwt.return wsid
+  >>= fun rmsgs ->
+    if List.length rmsgs <> 1 then
+      Lwt.fail_with @@ Printf.sprintf "[YAS]: Expected 1 OK reply, but get %d replies" (List.length rmsgs)
+    else
+      let rmsg = List.hd rmsgs in
+      let wsid = Apero.Properties.find Yaks_properties.Admin.workspaceid rmsg.header.properties in
+      Lwt.return wsid
 
 let process_get ?quorum ?workspace selector (driver:t) =
   let _ = Logs_lwt.info (fun m -> m "[YASD]: GET on %s" (Selector.to_string selector)) in
   make_get ?quorum ?workspace selector
   >>= fun msg -> process msg driver
-  >>= fun rmsg ->
-  if rmsg.header.corr_id <> msg.header.corr_id then
-    Lwt.fail_with "Correlation Id is different!"
-  else
-    match rmsg.body with
-    | YPathValueList l -> Lwt.return l
-    | YErrorInfo e ->
-      let errno = Apero.Vle.to_int e in
-      Lwt.fail_with @@ Printf.sprintf "[YAS]: GET ErrNo: %d" errno
-    | _ -> Lwt.fail_with "Message body is wrong"
+  >>= fun rmsgs ->
+    if List.length rmsgs = 0 then
+      Lwt.fail_with @@ Printf.sprintf "[YAS]: GET on %s: expected at least 1 reply, but get 0 reply" (Selector.to_string selector)
+    else
+      let hd = List.hd rmsgs in
+      match hd.body with
+      | YPathValueList _ -> Lwt.return @@
+        List.fold_left (fun l (rmsg:Yaks_fe_sock_types.message) ->
+          match rmsg.body with
+          | YPathValueList pvs -> List.append l pvs
+          | _ -> 
+            let _ = Logs_lwt.warn (fun m -> m "[YASD]: GET on %s: Received an invalid reply (wrong body type)" (Selector.to_string selector)) in
+            l
+          ) [] rmsgs
+      | YErrorInfo e ->
+        let errno = Apero.Vle.to_int e in
+        Lwt.fail_with @@ Printf.sprintf "[YAS]: GET on %s: ErrNo %d" (Selector.to_string selector) errno
+      | _ -> Lwt.fail_with @@ Printf.sprintf "[YAS]: GET on %s: Received an invalid reply (wrong body type)" (Selector.to_string selector)
 
 let process_put ?quorum ?workspace path value (driver:t) =
   let _ = Logs_lwt.info (fun m -> m "[YASD]: PUT on %s -> %s" (Path.to_string path) (Value.to_string value)) in
@@ -222,13 +240,14 @@ let process_subscribe ?workspace ?(listener=fun _ -> Lwt.return_unit) selector (
   let _ = Logs_lwt.info (fun m -> m "[YASD]: SUB on %s" (Selector.to_string selector)) in
   make_sub ?workspace selector
   >>= fun msg ->  process msg driver
-  >>= fun rmsg ->
-  if rmsg.header.corr_id <> msg.header.corr_id then
-    Lwt.fail_with "Correlation Id is different!"
-  else
-    let subid = Apero.Properties.find Yaks_properties.Admin.subscriberid rmsg.header.properties in
-    MVar.guarded driver @@ fun self ->
-    MVar.return subid {self with subscribers = ListenersMap.add subid listener self.subscribers}
+  >>= fun rmsgs ->
+    if List.length rmsgs <> 1 then
+      Lwt.fail_with @@ Printf.sprintf "[YAS]: Expected 1 OK reply, but get %d replies" (List.length rmsgs)
+    else
+      let rmsg = List.hd rmsgs in
+      let subid = Apero.Properties.find Yaks_properties.Admin.subscriberid rmsg.header.properties in
+      MVar.guarded driver @@ fun self ->
+      MVar.return subid {self with subscribers = ListenersMap.add subid listener self.subscribers}
 
 let process_unsubscribe subid (driver:t) =
   let _ = Logs_lwt.info (fun m -> m "[YASD]: UNSUB on %s" subid) in
@@ -272,13 +291,23 @@ let process_eval ?multiplicity ?workspace selector (driver:t) =
   let _ = Logs_lwt.info (fun m -> m "[YASD]: EVAL on %s" (Selector.to_string selector)) in
   make_eval ?multiplicity ?workspace selector
   >>= fun msg -> process msg driver
-  >>= fun rmsg ->
-  if rmsg.header.corr_id <> msg.header.corr_id then
-    Lwt.fail_with "Correlation Id is different!"
-  else
-    match rmsg.body with
-    | YPathValueList l -> Lwt.return l
-    | YErrorInfo e ->
-      let errno = Apero.Vle.to_int e in
-      Lwt.fail_with @@ Printf.sprintf "[YAS]: GET ErrNo: %d" errno
-    | _ -> Lwt.fail_with "Message body is wrong"
+  >>= fun rmsgs ->
+    if List.length rmsgs = 0 then
+      Lwt.fail_with @@ Printf.sprintf "[YAS]: EVAL on %s: expected at least 1 reply, but get 0 reply" (Selector.to_string selector)
+    else
+      let hd = List.hd rmsgs in
+      match hd.body with
+      | YPathValueList _ -> Lwt.return @@
+        List.fold_left (fun l (rmsg:Yaks_fe_sock_types.message) ->
+          match rmsg.body with
+          | YPathValueList pvs -> List.append l pvs
+          | _ -> 
+            let _ = Logs_lwt.warn (fun m -> m "[YASD]: EVAL on %s: Received an invalid reply (wrong body type)" (Selector.to_string selector)) in
+            l
+          ) [] rmsgs
+      | YErrorInfo e ->
+        let errno = Apero.Vle.to_int e in
+        Lwt.fail_with @@ Printf.sprintf "[YAS]: EVAL on %s: ErrNo %d" (Selector.to_string selector) errno
+      | _ -> Lwt.fail_with @@ Printf.sprintf "[YAS]: EVAL on %s: Received an invalid reply (wrong body type)" (Selector.to_string selector)
+
+

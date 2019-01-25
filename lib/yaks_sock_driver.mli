@@ -20,5 +20,5 @@ val process_register_eval : ?workspace:wsid -> ?workpath:Path.t -> Path.t -> eva
 val process_unregister_eval : ?workspace:wsid -> ?workpath:Path.t -> Path.t -> t -> unit Lwt.t
 val process_eval : ?multiplicity:int -> ?workspace:wsid -> Selector.t -> t -> ((Path.t * Value.t) list) Lwt.t 
 
-val process : Yaks_fe_sock_types.message -> t -> Yaks_fe_sock_types.message Lwt.t
+val process : Yaks_fe_sock_types.message -> t -> Yaks_fe_sock_types.message list Lwt.t
 
