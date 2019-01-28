@@ -18,6 +18,11 @@ let eval_callback path props =
   let%lwt _ = Lwt_io.printf ">>>> [APP] eval_callback called for %s with %s\n"  (Yaks.Path.to_string path) (Properties.to_string props) in
   Lwt.return @@ Yaks.Value.StringValue ("Hello "^name^" !!")
 
+let eval_callback2 path props =
+  let name = Properties.get_or_default "name" ~default:"World"  props in
+  let%lwt _ = Lwt_io.printf ">>>> [APP] eval_callback2 called for %s with %s\n"  (Yaks.Path.to_string path) (Properties.to_string props) in
+  Lwt.return @@ Yaks.Value.StringValue ("Bonjour "^name^" !!")
+
 
 let print_admin_space workspace =     
   
@@ -56,6 +61,10 @@ let main argv =
   let%lwt _ = Lwt_io.read_line Lwt_io.stdin in
   let%lwt _ = Yaks.Workspace.register_eval ~//"test_eval" eval_callback workspace in
 
+  let%lwt _ = Lwt_io.printf "\n<<<< [APP] Register eval2 for to %s\n"  "/afos/0/test_eval2" in
+  let%lwt _ = Lwt_io.read_line Lwt_io.stdin in
+  let%lwt _ = Yaks.Workspace.register_eval ~//"test_eval2" eval_callback2 workspace in
+
   let%lwt _ = print_admin_space workspace in
 
   let%lwt _ = Lwt_io.printf "\n<<<< [APP] Subscribing to %s\n"  "/afos/0/**" in
@@ -89,9 +98,18 @@ let main argv =
   ) data; Lwt.return_unit
   in
   
-  let%lwt _ = Lwt_io.printf "\n<<<< [APP] Calling eval %s with name=Bob\n" "/afos/0/test_eval" in
+  let%lwt _ = Lwt_io.printf "\n<<<< [APP] Calling eval %s with name=Bob\n" "/afos/0/test_eval2" in
   let%lwt _ = Lwt_io.read_line Lwt_io.stdin in
-  let%lwt _ =Yaks.Workspace.eval ~/*"test_eval?(name=Bob)" workspace
+  let%lwt _ =Yaks.Workspace.eval ~/*"test_eval2?(name=Bob)" workspace
+  >>= fun data -> List.iter (
+    fun (k,v) -> 
+      ignore @@ Lwt_io.printf ">>>> [APP] K %s - V: %s\n"  (Yaks.Path.to_string k) (Yaks.Value.to_string v);
+  ) data; Lwt.return_unit
+  in
+
+  let%lwt _ = Lwt_io.printf "\n<<<< [APP] Calling eval %s with name=Carl\n" "/afos/0/test_*" in
+  let%lwt _ = Lwt_io.read_line Lwt_io.stdin in
+  let%lwt _ =Yaks.Workspace.eval ~/*"test_*?(name=Carl)" workspace
   >>= fun data -> List.iter (
     fun (k,v) -> 
       ignore @@ Lwt_io.printf ">>>> [APP] K %s - V: %s\n"  (Yaks.Path.to_string k) (Yaks.Value.to_string v);
