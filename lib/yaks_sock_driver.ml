@@ -30,32 +30,16 @@ let check_socket sock =
 
 let send_to_socket msg sock = 
   let open Apero in
-  let buf = IOBuf.create max_size in
-  let concat bl bd =
-    let open Apero.Result.Infix in
-    let data = IOBuf.create @@ (IOBuf.limit bl) + (IOBuf.limit bd) in
-    IOBuf.put_buf bl data >>= IOBuf.put_buf bd
-  in
-  match Yaks_fe_sock_codec.encode_message msg buf with
-  | Ok buf ->
-    let lbuf = IOBuf.create 16 in
-    let fbuf = IOBuf.flip buf in
-    (match encode_vle (Vle.of_int @@ IOBuf.limit fbuf) lbuf with
-     | Ok lbuf ->
-       let%lwt _ = Logs_lwt.debug (fun m -> m "Sending message to socket") in
-       let _ = check_socket in
-       let lbuf = IOBuf.flip lbuf in
-       let data = IOBuf.flip @@ Apero.Result.get @@ concat lbuf fbuf in 
-       Net.write_all sock data >>= fun bs ->
-       let%lwt _ = Logs_lwt.debug (fun m -> m "Sended %d bytes" bs) in
-       Lwt.return_unit
-     | Error e -> 
-       let%lwt _ = Logs_lwt.err (fun m -> m "Failed in writing message: %s" (Apero.show_error e)) in
-       Lwt.fail @@ Exception e )
-  | Error e -> 
-    let%lwt _ = Logs_lwt.err (fun m -> m "Failed in encoding messge: %s" (Apero.show_error e)) in
-    Lwt.fail @@ Exception e
-
+  let buf = Abuf.create max_size in
+  Yaks_fe_sock_codec.encode_message msg buf;
+  let lbuf = Abuf.create 16 in
+  (try encode_vle (Vle.of_int @@ Abuf.readable_bytes buf) lbuf
+   with e -> Logs.err (fun m -> m "Failed in encoding messge: %s" (Printexc.to_string e)); raise e);
+  Logs_lwt.debug (fun m -> m "Sending message to socket") >>= fun _ ->
+  check_socket sock;
+  Lwt.catch (fun () -> Net.write_all sock (Abuf.wrap [lbuf; buf])) 
+            (fun e ->  Logs_lwt.err (fun m -> m "Failed in writing message: %s" (Printexc.to_string e)) >>= fun () -> Lwt.fail e) >>= fun bs ->
+  Logs_lwt.debug (fun m -> m "Sended %d bytes" bs)
 
 let process_eval selector (driver:t) =
   let open Apero in
@@ -74,63 +58,58 @@ let process_eval selector (driver:t) =
 
 let receiver_loop (driver:t) = 
   let open Apero in
+  let open Apero.Infix in
   MVar.read driver >>= fun self ->
-  let lbuf = IOBuf.create 16 in
-  let%lwt len = Net.read_vle self.sock lbuf in
-  let%lwt _ = Logs_lwt.debug (fun m -> m "Message lenght : %d" (Vle.to_int len)) in
-  let buf = IOBuf.create (Vle.to_int len) in
-  let%lwt n = Net.read_all self.sock buf in
-  let _ = check_socket self.sock
-  in
+  let%lwt len = Net.read_vle self.sock >>= Vle.to_int %> Lwt.return in
+  let%lwt _ = Logs_lwt.debug (fun m -> m "Message lenght : %d" len) in
+  let buf = Abuf.create len in
+  let%lwt n = Net.read_all self.sock buf len in
+  let () = check_socket self.sock in
   let%lwt _ = Logs_lwt.debug (fun m -> m "Read %d bytes out of the socket" n) in
-  match decode_message buf with
-  | Ok (msg, _) -> 
-    (match (msg.header.mid, msg.body) with
-    | (NOTIFY, YNotification (subid, data)) ->
-      MVar.read driver >>= fun self ->
-      (match ListenersMap.find_opt subid self.subscribers with
-      | Some cb ->
-        (* Run listener's callback in future (catching exceptions) *)
-        let _ =  Lwt.try_bind (fun () -> let%lwt _ = Logs_lwt.debug (fun m -> m "Notify received. Call listener for subscription %s" subid) in cb data)
-          (fun () -> Lwt.return_unit)
-          (fun ex -> let%lwt _ = Logs_lwt.warn (fun m -> m "Listener's callback of subscription %s raised an exception: %s\n %s" subid (Printexc.to_string ex) (Printexc.get_backtrace ())) in Lwt.return_unit)
-        in
-        (* Return unit immediatly to release socket reading thread *)
-        Lwt.return_unit
-      | None ->  
-        let%lwt _ = Logs_lwt.debug (fun m -> m "Received notification with unknown subscriberid %s" subid) in
-        Lwt.return_unit)
-
-    | (EVAL, YSelector s) ->
-      (* Process eval in future (catching exceptions) *)
-      let _ = Lwt.try_bind
-        (fun () -> process_eval s driver >>= fun results ->
-        make_values msg.header.corr_id results >>= fun rmsg ->
-        send_to_socket rmsg self.sock)
-          (fun () -> Lwt.return_unit)
-          (fun ex -> let%lwt _ = Logs_lwt.warn (fun m -> m "Eval's callback raised an exception: %s\n %s" (Printexc.to_string ex) (Printexc.get_backtrace ())) in
-            make_error msg.header.corr_id INTERNAL_SERVER_ERROR >>= fun rmsg ->
-            send_to_socket rmsg self.sock)
+  (try decode_message buf
+  with e ->  Logs.err (fun m -> m "Failed in parsing message %s" (Printexc.to_string e)) ; raise e) |> fun msg ->
+  match (msg.header.mid, msg.body) with
+  | (NOTIFY, YNotification (subid, data)) ->
+    MVar.read driver >>= fun self ->
+    (match ListenersMap.find_opt subid self.subscribers with
+    | Some cb ->
+      (* Run listener's callback in future (catching exceptions) *)
+      let _ =  Lwt.try_bind (fun () -> let%lwt _ = Logs_lwt.debug (fun m -> m "Notify received. Call listener for subscription %s" subid) in cb data)
+        (fun () -> Lwt.return_unit)
+        (fun ex -> let%lwt _ = Logs_lwt.warn (fun m -> m "Listener's callback of subscription %s raised an exception: %s\n %s" subid (Printexc.to_string ex) (Printexc.get_backtrace ())) in Lwt.return_unit)
       in
       (* Return unit immediatly to release socket reading thread *)
       Lwt.return_unit
+    | None ->  
+      let%lwt _ = Logs_lwt.debug (fun m -> m "Received notification with unknown subscriberid %s" subid) in
+      Lwt.return_unit)
 
-    | (_, _) -> MVar.guarded driver @@ (fun self ->
-      (match WorkingMap.find_opt msg.header.corr_id self.working_set with 
-      | Some (resolver, msg_list) ->
-        let msg_list = List.append msg_list [msg] in
-        if (Yaks_fe_sock_types.has_incomplete_flag msg.header.flags) then
-          MVar.return () {self with working_set = WorkingMap.add msg.header.corr_id (resolver, msg_list) self.working_set}
-        else
-          let _ = Lwt.wakeup_later resolver msg_list in
-          MVar.return () {self with working_set = WorkingMap.remove msg.header.corr_id self.working_set}
-      | None -> let%lwt _ = Logs_lwt.warn (fun m -> m "Received message with unknown correlation id %d" @@ Vle.to_int msg.header.corr_id ) in
-        MVar.return () self)
-      ))
+  | (EVAL, YSelector s) ->
+    (* Process eval in future (catching exceptions) *)
+    let _ = Lwt.try_bind
+      (fun () -> process_eval s driver >>= fun results ->
+      make_values msg.header.corr_id results >>= fun rmsg ->
+      send_to_socket rmsg self.sock)
+        (fun () -> Lwt.return_unit)
+        (fun ex -> let%lwt _ = Logs_lwt.warn (fun m -> m "Eval's callback raised an exception: %s\n %s" (Printexc.to_string ex) (Printexc.get_backtrace ())) in
+          make_error msg.header.corr_id INTERNAL_SERVER_ERROR >>= fun rmsg ->
+          send_to_socket rmsg self.sock)
+    in
+    (* Return unit immediatly to release socket reading thread *)
+    Lwt.return_unit
 
-  | Error e -> 
-    let%lwt _ = Logs_lwt.err (fun m -> m "Failed in parsing message %s" (Apero.show_error e)) in
-    Lwt.fail @@ Exception e
+  | (_, _) -> MVar.guarded driver @@ (fun self ->
+    (match WorkingMap.find_opt msg.header.corr_id self.working_set with 
+    | Some (resolver, msg_list) ->
+      let msg_list = List.append msg_list [msg] in
+      if (Yaks_fe_sock_types.has_incomplete_flag msg.header.flags) then
+        MVar.return () {self with working_set = WorkingMap.add msg.header.corr_id (resolver, msg_list) self.working_set}
+      else
+        let _ = Lwt.wakeup_later resolver msg_list in
+        MVar.return () {self with working_set = WorkingMap.remove msg.header.corr_id self.working_set}
+    | None -> let%lwt _ = Logs_lwt.warn (fun m -> m "Received message with unknown correlation id %Ld" msg.header.corr_id) in
+      MVar.return () self)
+    )
 
 let rec loop driver  () =
   receiver_loop driver >>= loop driver
