@@ -7,11 +7,9 @@ open Lwt.Infix
 let usage () = ignore( print_endline "USAGE:\n\t simple <yaks_address> <yaks_port>\n" )
 
 
-let observer data = 
-  Lwt_io.printf ">>>> [APP] OBSERVER\n"
-  >>= fun _ -> Lwt_list.iter_p (fun (k,v) -> 
-      Lwt_io.printf ">>>> [APP] [OBS] K %s - V: %s\n"  (Yaks.Path.to_string k) (Yaks.Value.to_string v) 
-    ) data
+let on_put_observer k v = 
+  Lwt_io.printf ">>>> [APP] Observer received Put:\n"
+  >>= fun _ -> Lwt_io.printf ">>>> [APP] [OBS] K %s - V: %s\n"  (Yaks.Path.to_string k) (Yaks.Value.to_string v) 
 
 let eval_callback path props =
   let name = Properties.get_or_default "name" ~default:"World"  props in
@@ -69,7 +67,7 @@ let main argv =
 
   let%lwt _ = Lwt_io.printf "\n<<<< [APP] Subscribing to %s\n"  "/afos/0/**" in
   let%lwt _ = Lwt_io.read_line Lwt_io.stdin in
-  let%lwt subid = Yaks.Workspace.subscribe ~listener:observer ~/*"**" workspace in
+  let%lwt subid = Yaks.Workspace.subscribe ~on_put:on_put_observer ~/*"**" workspace in
 
   let%lwt _ = print_admin_space workspace in
 

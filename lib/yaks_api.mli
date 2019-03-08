@@ -15,8 +15,13 @@ type subid = string
 (** Subscriber identifier (unique per Yaks service) *)
 
 
-type listener_t = (Path.t * Value.t) list -> unit Lwt.t
-(** Callback function implemented by the listener *)
+type on_put_t = Path.t -> Value.t -> unit Lwt.t
+(** Callback function implemented by a subscriber, triggered by calls to the {! put} operation *)
+type on_update_t = Path.t -> Value.t -> unit Lwt.t
+(** Callback function implemented by a subscriber, triggered by calls to {! update} operation.
+    Note that the Value.t arguments will be the same that those passed to the {! update} operations (i.e. delta values). *)
+type on_remove_t = Path.t -> unit Lwt.t
+(** Callback function implemented by a subscriber, triggered by calls to {! remove} operation *)
 
 type eval_callback_t = Path.t -> properties -> Value.t Lwt.t
 (** Callback function registered as an eval *)
@@ -84,13 +89,16 @@ module Workspace : sig
     If a [quorum] is provided, then the [remove] will complete only after having successfully removed the tuple 
     from [quorum] storages. *)
 
-  val subscribe: ?listener:listener_t -> Selector.t -> t -> subid Lwt.t
+  val subscribe: ?on_put:on_put_t -> ?on_update:on_update_t -> ?on_remove:on_remove_t -> Selector.t -> t -> subid Lwt.t
   (** [subscribe listener selector ws] registers a subscription to tuples whose path matches the selector [s]. 
   
     A subscription identifier is returned.
-    The [selector] can be absolute or relative to the workspace [ws]. If specified, 
-    the [listener] callback will be called for each {! put} and {! update} on tuples whose
-    path matches the subscription [selector] *)
+    The [selector] can be absolute or relative to the workspace [ws].
+    If those argiuments are specified: 
+    - the [on_put] callback will be called whenever one or more call occurs to the {! put} operation with a path that matches the [selector]
+    - the [on_update] callback will be called whenever one or more call occurs to the {! update} operation with a path that matches the [selector]
+    - the [on_remove] callback will be called whenever one or more call occurs to the {! remove} operation with a path that matches the [selector]
+    *)
 
   val unsubscribe: subid -> t -> unit Lwt.t
   (** [unsubscribe subid w] unregisters a previous subscription with the identifier [subid] *)

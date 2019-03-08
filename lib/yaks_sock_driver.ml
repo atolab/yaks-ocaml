@@ -1,17 +1,26 @@
+open Apero
 open Lwt.Infix
 open Yaks_types
 open Yaks_sock_types
 open Yaks_sock_types.Message
+open Yaks_fe_sock_types
 open Yaks_fe_sock_codec
 
 module WorkingMap = Map.Make(Apero.Vle)
-module ListenersMap = Map.Make(String)
+module SubscriptionMap = Map.Make(String)
 module EvalsMap = Map.Make(Path)
+
+type subscription = {
+    on_put : on_put_t
+  ; on_update : on_update_t
+  ; on_remove : on_remove_t
+  ; previous_call: unit Lwt.t
+}
 
 type state = {
   sock : Lwt_unix.file_descr
 ; working_set : (Yaks_fe_sock_types.message list Lwt.u * Yaks_fe_sock_types.message list) WorkingMap.t
-; subscribers : listener_t ListenersMap.t
+; subscribers : subscription SubscriptionMap.t
 ; evals : eval_callback_t EvalsMap.t
 }
 
@@ -56,6 +65,26 @@ let process_eval selector (driver:t) =
     EvalsMap.fold (fun path eval l -> (path,eval)::l) matching_evals [] |>
     Lwt_list.map_p (fun (path, eval) -> eval path params >>= fun result -> Lwt.return (path, result) )
 
+let rec process_notify subid subscription changes =
+  match changes with
+  | Put(path, value)::l ->
+    Lwt.try_bind (fun () -> let%lwt _ = Logs_lwt.debug (fun m -> m "Notify Put received. Call on_put for subscription %s" subid) in subscription.on_put path value)
+      (fun () -> Lwt.return_unit)
+      (fun ex -> let%lwt _ = Logs_lwt.warn (fun m -> m "Subscriber's on_put callback of subscription %s raised an exception: %s\n %s" subid (Printexc.to_string ex) (Printexc.get_backtrace ())) in Lwt.return_unit)
+    >>= fun () -> process_notify subid subscription l
+  | Update(path, value)::l ->
+    Lwt.try_bind (fun () -> let%lwt _ = Logs_lwt.debug (fun m -> m "Notify Update received. Call on_update for subscription %s" subid) in subscription.on_update path value)
+      (fun () -> Lwt.return_unit)
+      (fun ex -> let%lwt _ = Logs_lwt.warn (fun m -> m "Subscriber's on_update callback of subscription %s raised an exception: %s\n %s" subid (Printexc.to_string ex) (Printexc.get_backtrace ())) in Lwt.return_unit)
+    >>= fun () -> process_notify subid subscription l
+  | Remove(path)::l ->
+    Lwt.try_bind (fun () -> let%lwt _ = Logs_lwt.debug (fun m -> m "Notify Remove received. Call on_remove for subscription %s" subid) in subscription.on_remove path)
+      (fun () -> Lwt.return_unit)
+      (fun ex -> let%lwt _ = Logs_lwt.warn (fun m -> m "Subscriber's on_remove callback of subscription %s raised an exception: %s\n %s" subid (Printexc.to_string ex) (Printexc.get_backtrace ())) in Lwt.return_unit)
+    >>= fun () -> process_notify subid subscription l
+  | [] -> Lwt.return_unit
+
+
 let receiver_loop (driver:t) = 
   let open Apero in
   let open Apero.Infix in
@@ -69,20 +98,17 @@ let receiver_loop (driver:t) =
   (try decode_message buf
   with e ->  Logs.err (fun m -> m "Failed in parsing message %s" (Printexc.to_string e)) ; raise e) |> fun msg ->
   match (msg.header.mid, msg.body) with
-  | (NOTIFY, YNotification (subid, data)) ->
-    MVar.read driver >>= fun self ->
-    (match ListenersMap.find_opt subid self.subscribers with
-    | Some cb ->
-      (* Run listener's callback in future (catching exceptions) *)
-      let _ =  Lwt.try_bind (fun () -> let%lwt _ = Logs_lwt.debug (fun m -> m "Notify received. Call listener for subscription %s" subid) in cb data)
-        (fun () -> Lwt.return_unit)
-        (fun ex -> let%lwt _ = Logs_lwt.warn (fun m -> m "Listener's callback of subscription %s raised an exception: %s\n %s" subid (Printexc.to_string ex) (Printexc.get_backtrace ())) in Lwt.return_unit)
-      in
-      (* Return unit immediatly to release socket reading thread *)
-      Lwt.return_unit
+  | (NOTIFY, YNotification (subid, changes)) ->
+    MVar.guarded driver @@ (fun self ->
+    (match SubscriptionMap.find_opt subid self.subscribers with
+    | Some subscription -> 
+    (* Run listener's callbacks in future (catching exceptions) *)
+    let new_call = subscription.previous_call >>= fun () -> process_notify subid subscription changes in
+    (* Return unit immediatly to release socket reading thread *)
+    MVar.return () {self with subscribers = SubscriptionMap.add subid {subscription with previous_call=new_call} self.subscribers}
     | None ->  
       let%lwt _ = Logs_lwt.debug (fun m -> m "Received notification with unknown subscriberid %s" subid) in
-      Lwt.return_unit)
+      MVar.return () self))
 
   | (EVAL, YSelector s) ->
     (* Process eval in future (catching exceptions) *)
@@ -117,7 +143,7 @@ let rec loop driver  () =
 let create locator = 
   let sock = Lwt_unix.socket PF_INET SOCK_STREAM 0 in
   Apero_net.connect sock locator >>= fun s ->
-  let driver = MVar.create {sock = s; working_set = WorkingMap.empty; subscribers = ListenersMap.empty; evals = EvalsMap.empty } in
+  let driver = MVar.create {sock = s; working_set = WorkingMap.empty; subscribers = SubscriptionMap.empty; evals = EvalsMap.empty } in
   let _ = loop driver () in
   Lwt.return driver
 
@@ -215,7 +241,7 @@ let process_remove ?quorum ?workspace path (driver:t) =
   >>= fun msg -> process msg driver
   >>= check_reply_ok msg.header.corr_id
 
-let process_subscribe ?workspace ?(listener=fun _ -> Lwt.return_unit) selector (driver:t) =
+let process_subscribe ?workspace on_put on_update on_remove selector (driver:t) =
   let _ = Logs_lwt.info (fun m -> m "[YASD]: SUB on %s" (Selector.to_string selector)) in
   make_sub ?workspace selector
   >>= fun msg ->  process msg driver
@@ -226,7 +252,7 @@ let process_subscribe ?workspace ?(listener=fun _ -> Lwt.return_unit) selector (
       let rmsg = List.hd rmsgs in
       let subid = Apero.Properties.find Yaks_properties.Admin.subscriberid rmsg.header.properties in
       MVar.guarded driver @@ fun self ->
-      MVar.return subid {self with subscribers = ListenersMap.add subid listener self.subscribers}
+      MVar.return subid {self with subscribers = SubscriptionMap.add subid {on_put; on_update; on_remove; previous_call=Lwt.return_unit} self.subscribers}
 
 let process_unsubscribe subid (driver:t) =
   let _ = Logs_lwt.info (fun m -> m "[YASD]: UNSUB on %s" subid) in
@@ -235,7 +261,7 @@ let process_unsubscribe subid (driver:t) =
   >>= check_reply_ok msg.header.corr_id
   >>= fun () ->
     MVar.guarded driver @@ fun self ->
-    MVar.return () {self with subscribers = ListenersMap.remove subid self.subscribers}
+    MVar.return () {self with subscribers = SubscriptionMap.remove subid self.subscribers}
 
 
 let to_absolute_path ?workpath path =

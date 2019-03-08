@@ -11,7 +11,9 @@ type sid = string
 type subid = string
 
 
-type listener_t = (Path.t * Value.t) list -> unit Lwt.t
+type on_put_t = Path.t -> Value.t -> unit Lwt.t
+type on_update_t = Path.t -> Value.t -> unit Lwt.t
+type on_remove_t = Path.t -> unit Lwt.t
 
 type eval_callback_t = Path.t -> properties -> Value.t Lwt.t
 
@@ -40,9 +42,9 @@ module Workspace = struct
       let _ = Logs_lwt.debug (fun m -> m "[YA]: REMOVE on %s" (Path.to_string path)) in
       Yaks_sock_driver.process_remove ?quorum ?workspace:t.wsid path t.driver
 
-    let subscribe ?(listener=(fun _ -> Lwt.return_unit)) selector t =
+    let subscribe ?(on_put=fun _ _ -> Lwt.return_unit) ?(on_update=fun _ _ -> Lwt.return_unit) ?(on_remove=fun _ -> Lwt.return_unit) selector t =
       let _ = Logs_lwt.debug (fun m -> m "[YA]: SUB on %s" (Selector.to_string selector)) in
-      Yaks_sock_driver.process_subscribe ?workspace:t.wsid ~listener selector t.driver
+      Yaks_sock_driver.process_subscribe ?workspace:t.wsid on_put on_update on_remove selector t.driver
 
     let unsubscribe subid t =
       let _ = Logs_lwt.debug (fun m -> m "[YA]: UNSUB %s" subid) in

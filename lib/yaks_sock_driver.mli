@@ -14,7 +14,7 @@ val process_get : ?quorum:int -> ?workspace:wsid -> Selector.t -> t -> ((Path.t 
 val process_put : ?quorum:int -> ?workspace:wsid -> Path.t -> Value.t -> t -> unit Lwt.t 
 val process_update : ?quorum:int -> ?workspace:wsid -> Path.t ->Value.t -> t -> unit Lwt.t 
 val process_remove : ?quorum:int -> ?workspace:wsid -> Path.t -> t  -> unit Lwt.t 
-val process_subscribe : ?workspace:wsid -> ?listener:listener_t -> Selector.t -> t -> subid Lwt.t
+val process_subscribe : ?workspace:wsid -> on_put_t -> on_update_t -> on_remove_t -> Selector.t -> t -> subid Lwt.t
 val process_unsubscribe :  subid -> t -> unit Lwt.t
 val process_register_eval : ?workspace:wsid -> ?workpath:Path.t -> Path.t -> eval_callback_t -> t -> unit Lwt.t
 val process_unregister_eval : ?workspace:wsid -> ?workpath:Path.t -> Path.t -> t -> unit Lwt.t
