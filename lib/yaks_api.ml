@@ -182,7 +182,7 @@ module Infix = struct
 
   let (~//) = Path.of_string
   let (~/*) = Selector.of_string
-  let (~$) s = Value.of_string s Value.String_Encoding |> Result.get
+  let (~$) s = Value.of_string s Value.STRING |> Result.get
 
 end
 
