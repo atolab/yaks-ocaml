@@ -11,7 +11,7 @@ type sid = string
 type subid = string
 
 
-type listener_t = (Path.t * Value.t) list -> unit Lwt.t
+type listener_t = (Path.t * change) list -> unit Lwt.t
 
 type eval_callback_t = Path.t -> properties -> Value.t Lwt.t
 

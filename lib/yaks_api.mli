@@ -15,7 +15,7 @@ type subid = string
 (** Subscriber identifier (unique per Yaks service) *)
 
 
-type listener_t = (Path.t * Value.t) list -> unit Lwt.t
+type listener_t = (Path.t * change) list -> unit Lwt.t
 (** Callback function implemented by the listener *)
 
 type eval_callback_t = Path.t -> properties -> Value.t Lwt.t

@@ -7,7 +7,7 @@ type correlationid = int64
 type wsid = string
 type subid = string
 
-type listener_t = (Path.t * Value.t) list -> unit Lwt.t
+type listener_t = (Path.t * change) list -> unit Lwt.t
 type eval_callback_t = Path.t -> properties -> Value.t Lwt.t
 
 let default_write_quorum = 1  (* meaning reply as soon as 1 Yaks acknowledges the write *)
@@ -41,47 +41,36 @@ module Message = struct
     let payload = Yaks_fe_sock_types.YPath path in
     make_msg Yaks_fe_sock_codes.WORKSPACE [] Properties.empty payload
 
+  let properties_of_workspace = function
+    | Some wsid -> Properties.singleton Yaks_properties.Admin.workspaceid wsid
+    | None -> Properties.empty 
+
   let make_put ?(quorum=default_write_quorum) ?workspace path value = 
     ignore quorum;
-    let properties = match workspace with
-      | Some wsid -> Properties.singleton Yaks_properties.Admin.workspaceid wsid
-      | None -> Properties.empty 
-    in
+    let properties = properties_of_workspace workspace in
     let payload = Yaks_fe_sock_types.YPathValueList [(path, value)] in 
     make_msg Yaks_fe_sock_codes.PUT [] properties payload
 
   let make_update  ?(quorum=default_write_quorum) ?workspace path value = 
     ignore quorum;
-    let properties = match workspace with
-      | Some wsid -> Properties.singleton Yaks_properties.Admin.workspaceid wsid
-      | None -> Properties.empty 
-    in
+    let properties = properties_of_workspace workspace in
     let payload = Yaks_fe_sock_types.YPathValueList [(path, value)] in 
     make_msg Yaks_fe_sock_codes.UPDATE [] properties payload
 
   let make_get ?(quorum=default_read_quorum) ?workspace selector = 
     ignore quorum;
-    let properties = match workspace with
-      | Some wsid -> Properties.singleton Yaks_properties.Admin.workspaceid wsid
-      | None -> Properties.empty 
-    in
+    let properties = properties_of_workspace workspace in
     let payload = Yaks_fe_sock_types.YSelector selector in 
     make_msg Yaks_fe_sock_codes.GET [] properties payload
 
   let make_remove ?(quorum=default_write_quorum) ?workspace path = 
     ignore quorum;
-    let properties = match workspace with
-      | Some wsid -> Properties.singleton Yaks_properties.Admin.workspaceid wsid
-      | None -> Properties.empty 
-    in
+    let properties = properties_of_workspace workspace in
     let payload = Yaks_fe_sock_types.YPath path in 
     make_msg Yaks_fe_sock_codes.DELETE [] properties payload
 
   let make_sub ?workspace selector = 
-    let properties = match workspace with
-      | Some wsid -> Properties.singleton Yaks_properties.Admin.workspaceid wsid
-      | None -> Properties.empty 
-    in
+    let properties = properties_of_workspace workspace in
     let payload = Yaks_fe_sock_types.YSelector selector in 
     make_msg Yaks_fe_sock_codes.SUB [] properties payload
 
@@ -94,27 +83,18 @@ module Message = struct
     make_msg ~corrid Yaks_fe_sock_codes.VALUES [] Properties.empty payload
 
   let make_reg_eval ?workspace path =
-    let properties = match workspace with
-      | Some wsid -> Properties.singleton Yaks_properties.Admin.workspaceid wsid
-      | None -> Properties.empty 
-    in
+    let properties = properties_of_workspace workspace in
     let payload = Yaks_fe_sock_types.YPath path in 
     make_msg Yaks_fe_sock_codes.REG_EVAL [] properties payload
 
   let make_unreg_eval ?workspace path =
-    let properties = match workspace with
-      | Some wsid -> Properties.singleton Yaks_properties.Admin.workspaceid wsid
-      | None -> Properties.empty 
-    in
+    let properties = properties_of_workspace workspace in
     let payload = Yaks_fe_sock_types.YPath path in 
     make_msg Yaks_fe_sock_codes.UNREG_EVAL [] properties payload
 
   let make_eval ?(multiplicity=default_multiplicity) ?workspace selector = 
     ignore multiplicity;
-    let properties = match workspace with
-      | Some wsid -> Properties.singleton Yaks_properties.Admin.workspaceid wsid
-      | None -> Properties.empty 
-    in
+    let properties = properties_of_workspace workspace in
     let payload = Yaks_fe_sock_types.YSelector selector in 
     make_msg Yaks_fe_sock_codes.EVAL [] properties payload
 

@@ -9,8 +9,14 @@ let usage () = ignore( print_endline "USAGE:\n\t simple <yaks_address> <yaks_por
 
 let observer data = 
   Lwt_io.printf ">>>> [APP] OBSERVER\n"
-  >>= fun _ -> Lwt_list.iter_p (fun (k,v) -> 
-      Lwt_io.printf ">>>> [APP] [OBS] K %s - V: %s\n"  (Yaks.Path.to_string k) (Yaks.Value.to_string v) 
+  >>= fun _ -> Lwt_list.iter_p (fun (k,c) ->
+      match c with
+      | Put tv ->
+        Lwt_io.printf ">>>> [APP] [OBS] received  Put of K %s - V: %s\n"  (Yaks.Path.to_string k) (Yaks.Value.to_string tv.value)
+      | Update tv ->
+        Lwt_io.printf ">>>> [APP] [OBS] received  Update of K %s - V: %s\n"  (Yaks.Path.to_string k) (Yaks.Value.to_string tv.value)
+      | Remove t ->
+        Lwt_io.printf ">>>> [APP] [OBS] received  Remove of K %s\n"  (Yaks.Path.to_string k)
     ) data
 
 let eval_callback path props =
