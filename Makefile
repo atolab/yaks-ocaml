@@ -1,6 +1,6 @@
 .PHONY: lib examples all clean test doc
 
-EXES=examples/client/simple.exe
+EXES=examples/client/simple.exe examples/throughput/ythrp.exe 
 
 BUILD_LIB=dune build	
 BUILD_EXAMPLES=dune build ${EXES}
