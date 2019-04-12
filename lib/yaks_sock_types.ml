@@ -18,14 +18,14 @@ module Message = struct
 
   type t = Yaks_fe_sock_types.message
 
+  let () = Random.self_init ()
+
   let make_msg ?corrid mid flags properties payload = 
     (* NOTE: no need to set PROPERTY in flags. If properties is not empty, make_header below add the flag *)
     let corr_id = 
       (match corrid with
        | Some i -> i
-       | None -> 
-         Random.self_init (); 
-         Random.int64 Int64.max_int
+       | None -> Random.int64 Int64.max_int
       ) in
     let header = Yaks_fe_sock_types.make_header mid flags corr_id properties in
     let body = payload in

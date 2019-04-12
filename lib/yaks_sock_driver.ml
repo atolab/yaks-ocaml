@@ -13,11 +13,13 @@ type state = {
 ; working_set : (Yaks_fe_sock_types.message list Lwt.u * Yaks_fe_sock_types.message list) WorkingMap.t
 ; subscribers : listener_t ListenersMap.t
 ; evals : eval_callback_t EvalsMap.t
+; buffer_pool : Abuf.t Lwt_pool.t
 }
 
 type t = state MVar.t
 
-let max_size = 64 * 1024
+let max_buffer_size = 64 * 1024
+let max_buffer_count = 32
 
 
 let check_socket sock = 
@@ -28,18 +30,24 @@ let check_socket sock =
     | Aborted e -> ignore @@ Logs_lwt.info (fun m -> m "Socket is aborted: %s" (Printexc.to_string e))
   in ()
 
-let send_to_socket msg sock = 
+let send_to_socket msg pool sock =
   let open Apero in
-  let buf = Abuf.create max_size in
-  Yaks_fe_sock_codec.encode_message msg buf;
-  let lbuf = Abuf.create 16 in
-  (try encode_vle (Vle.of_int @@ Abuf.readable_bytes buf) lbuf
-   with e -> Logs.err (fun m -> m "Failed in encoding messge: %s" (Printexc.to_string e)); raise e);
+  Lwt_pool.use pool (fun buf ->
+    Abuf.clear buf;
+    Yaks_fe_sock_codec.encode_message msg buf;
+    Lwt_pool.use pool (fun lbuf ->
+      Abuf.clear lbuf;
+      (try encode_vle (Vle.of_int @@ Abuf.readable_bytes buf) lbuf
+      with e -> Logs.err (fun m -> m "Failed in encoding messge: %s" (Printexc.to_string e)); raise e);
+      Lwt.return @@ Abuf.wrap [lbuf; buf]
+    )
+  ) >>= fun buf ->
   Logs_lwt.debug (fun m -> m "Sending message to socket") >>= fun _ ->
   check_socket sock;
-  Lwt.catch (fun () -> Net.write_all sock (Abuf.wrap [lbuf; buf])) 
+  Lwt.catch (fun () -> Net.write_all sock buf)
             (fun e ->  Logs_lwt.err (fun m -> m "Failed in writing message: %s" (Printexc.to_string e)) >>= fun () -> Lwt.fail e) >>= fun bs ->
   Logs_lwt.debug (fun m -> m "Sended %d bytes" bs)
+
 
 let process_eval selector (driver:t) =
   let open Apero in
@@ -89,11 +97,11 @@ let receiver_loop (driver:t) =
     let _ = Lwt.try_bind
       (fun () -> process_eval s driver >>= fun results ->
       make_values msg.header.corr_id results >>= fun rmsg ->
-      send_to_socket rmsg self.sock)
+      send_to_socket rmsg self.buffer_pool self.sock)
         (fun () -> Lwt.return_unit)
         (fun ex -> let%lwt _ = Logs_lwt.warn (fun m -> m "Eval's callback raised an exception: %s\n %s" (Printexc.to_string ex) (Printexc.get_backtrace ())) in
           make_error msg.header.corr_id INTERNAL_SERVER_ERROR >>= fun rmsg ->
-          send_to_socket rmsg self.sock)
+          send_to_socket rmsg self.buffer_pool self.sock)
     in
     (* Return unit immediatly to release socket reading thread *)
     Lwt.return_unit
@@ -117,7 +125,13 @@ let rec loop driver  () =
 let create locator = 
   let sock = Lwt_unix.socket PF_INET SOCK_STREAM 0 in
   Apero_net.connect sock locator >>= fun s ->
-  let driver = MVar.create {sock = s; working_set = WorkingMap.empty; subscribers = ListenersMap.empty; evals = EvalsMap.empty } in
+  let driver = MVar.create {
+    sock = s;
+    working_set = WorkingMap.empty;
+    subscribers = ListenersMap.empty;
+    evals = EvalsMap.empty;
+    buffer_pool = Lwt_pool.create max_buffer_count (fun () -> Lwt.return @@ Abuf.create_bigstring ~grow:8192 max_buffer_size) }
+  in
   let _ = loop driver () in
   Lwt.return driver
 
@@ -129,7 +143,7 @@ let process (msg:Yaks_fe_sock_types.message) driver =
   MVar.guarded driver @@
   fun self ->
   let promise, completer = Lwt.wait () in
-  send_to_socket msg self.sock
+  send_to_socket msg self.buffer_pool self.sock
   >>= fun _ ->
   MVar.return_lwt promise {self with working_set = WorkingMap.add msg.header.corr_id (completer,[]) self.working_set}
 
