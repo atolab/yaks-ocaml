@@ -3,20 +3,20 @@ open Yaks_ocaml
 open Yaks
 open Yaks.Infix
 
-let rec put_n n ws base_path value = 
-    let path = ~//(base_path ^ (string_of_int n)) in 
-    if n > 1 then
 
+let rec put_n n ws base_path value result =
+    let path = ~//base_path in
+    if n > 1 then
         begin
             let start = Unix.gettimeofday () in    
-            let _ = Yaks.Workspace.put path value ws in
+            let%lwt () = Yaks.Workspace.put path value ws in
             let stop = Unix.gettimeofday () in 
             let delta = stop -. start in 
-            let _ = Lwt_io.printf "%i\n" (int_of_float (delta *. 1000000.0)) in
-            put_n (n-1) ws base_path value
+            let lt = int_of_float (delta *. 1000000.0) in
+            Array.set result (n-1) lt;
+            put_n (n-1) ws base_path value result
         end
     else Yaks.Workspace.put path value ws
-
 let create_data n =
     let rec r_create_data n s = 
         if n > 0 then
@@ -25,12 +25,13 @@ let create_data n =
     in r_create_data n ""
 
 
-let run locator samples size = 
+let run locator samples size result  =
     let%lwt y = Yaks.login locator Properties.empty in 
     let%lwt ws = Yaks.workspace ~//"/" y in 
     let base_path = "/test/lat/put" in 
     let value = Value.StringValue (create_data size) in
-    let%lwt () = put_n samples ws base_path value in 
+    let%lwt () = put_n samples ws base_path value result in
+    let _ = Array.iter (Printf.printf "%i\n") result in
     Lwt.return_unit
 
 
@@ -40,5 +41,6 @@ let () =
     let samples = int_of_string (Array.get Sys.argv 3) in 
     let size = int_of_string (Array.get Sys.argv 4) in 
     let locator = Apero.Option.get @@ Apero_net.Locator.of_string @@ Printf.sprintf "tcp/%s:%s" addr port in 
-    Lwt_main.run @@ run locator samples size
+    let result = Array.make samples 0 in
+    Lwt_main.run @@ run locator samples size result
 
