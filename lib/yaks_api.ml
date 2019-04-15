@@ -18,31 +18,32 @@ type eval_callback_t = Path.t -> properties -> Value.t Lwt.t
 type transcoding_fallback = Fail | Drop | Keep
 
 module Workspace = struct
-    type t = 
+    type t =
       { driver : Yaks_sock_driver.t
       ; wsid : wsid option 
-      ; path: Path.t option }
+      ; path: Path.t option
+      ; properties: properties }
 
     let get ?quorum ?encoding ?fallback selector t =
       let _ = ignore encoding and _ = ignore fallback in
       let _ = Logs_lwt.debug (fun m -> m "[YA]: GET on %s" (Selector.to_string selector)) in
-      Yaks_sock_driver.process_get ?quorum ?workspace:t.wsid selector t.driver
+      Yaks_sock_driver.process_get ?quorum t.properties selector t.driver
 
     let put ?quorum path value t =
       let _ = Logs_lwt.debug (fun m -> m "[YA]: PUT on %s" (Path.to_string path)) in
-      Yaks_sock_driver.process_put ?quorum ?workspace:t.wsid path value t.driver
+      Yaks_sock_driver.process_put ?quorum t.properties path value t.driver
 
     let update ?quorum path value t =
       let _ = Logs_lwt.debug (fun m -> m "[YA]: UPDATE on %s" (Path.to_string path)) in
-      Yaks_sock_driver.process_put ?quorum ?workspace:t.wsid path value t.driver
+      Yaks_sock_driver.process_put ?quorum t.properties path value t.driver
 
     let remove ?quorum path t =
       let _ = Logs_lwt.debug (fun m -> m "[YA]: REMOVE on %s" (Path.to_string path)) in
-      Yaks_sock_driver.process_remove ?quorum ?workspace:t.wsid path t.driver
+      Yaks_sock_driver.process_remove ?quorum t.properties path t.driver
 
     let subscribe ?(listener=(fun _ -> Lwt.return_unit)) selector t =
       let _ = Logs_lwt.debug (fun m -> m "[YA]: SUB on %s" (Selector.to_string selector)) in
-      Yaks_sock_driver.process_subscribe ?workspace:t.wsid ~listener selector t.driver
+      Yaks_sock_driver.process_subscribe t.properties ~listener selector t.driver
 
     let unsubscribe subid t =
       let _ = Logs_lwt.debug (fun m -> m "[YA]: UNSUB %s" subid) in
@@ -50,16 +51,16 @@ module Workspace = struct
 
     let register_eval path eval_callback t =
       let _ = Logs_lwt.debug (fun m -> m "[YA]: REG_EVAL %s" (Path.to_string path)) in
-      Yaks_sock_driver.process_register_eval ?workspace:t.wsid ?workpath:t.path path eval_callback t.driver
+      Yaks_sock_driver.process_register_eval t.properties ?workpath:t.path path eval_callback t.driver
 
     let unregister_eval path t =
       let _ = Logs_lwt.debug (fun m -> m "[YA]: UNREG_EVAL %s" (Path.to_string path)) in
-      Yaks_sock_driver.process_unregister_eval ?workspace:t.wsid ?workpath:t.path path t.driver
+      Yaks_sock_driver.process_unregister_eval t.properties ?workpath:t.path path t.driver
 
     let eval ?multiplicity ?encoding ?fallback selector t =
       let _ = ignore encoding and _ = ignore fallback in
       let _ = Logs_lwt.debug (fun m -> m "[YA]: EVAL on %s" (Selector.to_string selector)) in
-      Yaks_sock_driver.process_eval ?multiplicity ?workspace:t.wsid selector t.driver
+      Yaks_sock_driver.process_eval ?multiplicity t.properties selector t.driver
 
 end
 
@@ -217,10 +218,14 @@ let get_id _ = "local"
 
 let workspace path t =
   Yaks_sock_driver.process_workspace path t.driver >|=
-  fun wsid : Workspace.t -> { driver=t.driver; wsid=Some wsid; path=Some path }
+  fun wsid : Workspace.t -> { 
+    driver=t.driver; 
+    wsid=Some wsid; 
+    path=Some path;
+    properties=Properties.singleton Yaks_properties.Admin.workspaceid wsid }
 
 let admin t : Admin.t Lwt.t = 
-  let w : Workspace.t = { driver=t.driver; wsid=None; path=None } in
+  let w : Workspace.t = { driver=t.driver; wsid=None; path=None; properties=Properties.empty } in
   let a : Admin.t = { admin=w } in
   Lwt.return a
 

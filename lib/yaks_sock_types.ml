@@ -10,9 +10,6 @@ type subid = string
 type listener_t = (Path.t * change) list -> unit Lwt.t
 type eval_callback_t = Path.t -> properties -> Value.t Lwt.t
 
-let default_write_quorum = 1  (* meaning reply as soon as 1 Yaks acknowledges the write *)
-let default_read_quorum = 1   (* meaning reply as soon as 1 answer is received for each matching path *)
-let default_multiplicity = 1   (* meaning Yaks calls 1 eval function per matching path *)
 
 module Message = struct
 
@@ -29,7 +26,7 @@ module Message = struct
       ) in
     let header = Yaks_fe_sock_types.make_header mid flags corr_id properties in
     let body = payload in
-    Lwt.return @@ Yaks_fe_sock_types.make_message header body 
+    Yaks_fe_sock_types.make_message header body 
 
   let make_login props =
     make_msg Yaks_fe_sock_codes.LOGIN [] props Yaks_fe_sock_types.YEmpty
@@ -41,38 +38,29 @@ module Message = struct
     let payload = Yaks_fe_sock_types.YPath path in
     make_msg Yaks_fe_sock_codes.WORKSPACE [] Properties.empty payload
 
-  let properties_of_workspace = function
-    | Some wsid -> Properties.singleton Yaks_properties.Admin.workspaceid wsid
-    | None -> Properties.empty 
-
-  let make_put ?(quorum=default_write_quorum) ?workspace path value = 
+  let make_put ?quorum ws_props path value = 
     ignore quorum;
-    let properties = properties_of_workspace workspace in
     let payload = Yaks_fe_sock_types.YPathValueList [(path, value)] in 
-    make_msg Yaks_fe_sock_codes.PUT [] properties payload
+    make_msg Yaks_fe_sock_codes.PUT [] ws_props payload
 
-  let make_update  ?(quorum=default_write_quorum) ?workspace path value = 
+  let make_update  ?quorum ws_props path value = 
     ignore quorum;
-    let properties = properties_of_workspace workspace in
     let payload = Yaks_fe_sock_types.YPathValueList [(path, value)] in 
-    make_msg Yaks_fe_sock_codes.UPDATE [] properties payload
+    make_msg Yaks_fe_sock_codes.UPDATE [] ws_props payload
 
-  let make_get ?(quorum=default_read_quorum) ?workspace selector = 
+  let make_get ?quorum ws_props selector = 
     ignore quorum;
-    let properties = properties_of_workspace workspace in
     let payload = Yaks_fe_sock_types.YSelector selector in 
-    make_msg Yaks_fe_sock_codes.GET [] properties payload
+    make_msg Yaks_fe_sock_codes.GET [] ws_props payload
 
-  let make_remove ?(quorum=default_write_quorum) ?workspace path = 
+  let make_remove ?quorum ws_props path = 
     ignore quorum;
-    let properties = properties_of_workspace workspace in
     let payload = Yaks_fe_sock_types.YPath path in 
-    make_msg Yaks_fe_sock_codes.DELETE [] properties payload
+    make_msg Yaks_fe_sock_codes.DELETE [] ws_props payload
 
-  let make_sub ?workspace selector = 
-    let properties = properties_of_workspace workspace in
+  let make_sub ws_props selector = 
     let payload = Yaks_fe_sock_types.YSelector selector in 
-    make_msg Yaks_fe_sock_codes.SUB [] properties payload
+    make_msg Yaks_fe_sock_codes.SUB [] ws_props payload
 
   let make_unsub subscriptionid =
     let payload = Yaks_fe_sock_types.YSubscription subscriptionid in
@@ -82,21 +70,18 @@ module Message = struct
     let payload = Yaks_fe_sock_types.YPathValueList values in 
     make_msg ~corrid Yaks_fe_sock_codes.VALUES [] Properties.empty payload
 
-  let make_reg_eval ?workspace path =
-    let properties = properties_of_workspace workspace in
+  let make_reg_eval ws_props path =
     let payload = Yaks_fe_sock_types.YPath path in 
-    make_msg Yaks_fe_sock_codes.REG_EVAL [] properties payload
+    make_msg Yaks_fe_sock_codes.REG_EVAL [] ws_props payload
 
-  let make_unreg_eval ?workspace path =
-    let properties = properties_of_workspace workspace in
+  let make_unreg_eval ws_props path =
     let payload = Yaks_fe_sock_types.YPath path in 
-    make_msg Yaks_fe_sock_codes.UNREG_EVAL [] properties payload
+    make_msg Yaks_fe_sock_codes.UNREG_EVAL [] ws_props payload
 
-  let make_eval ?(multiplicity=default_multiplicity) ?workspace selector = 
+  let make_eval ?multiplicity ws_props selector = 
     ignore multiplicity;
-    let properties = properties_of_workspace workspace in
     let payload = Yaks_fe_sock_types.YSelector selector in 
-    make_msg Yaks_fe_sock_codes.EVAL [] properties payload
+    make_msg Yaks_fe_sock_codes.EVAL [] ws_props payload
 
 
   let make_ok corrid =

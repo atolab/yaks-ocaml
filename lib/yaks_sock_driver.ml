@@ -49,7 +49,7 @@ let send_to_socket msg pool sock =
   Logs_lwt.debug (fun m -> m "Sended %d bytes" bs)
 
 
-let process_eval selector (driver:t) =
+let process_incoming_eval selector (driver:t) =
   let open Apero in
   MVar.read driver >>= fun self ->
   let params = match Selector.properties selector with
@@ -95,12 +95,12 @@ let receiver_loop (driver:t) =
   | (EVAL, YSelector s) ->
     (* Process eval in future (catching exceptions) *)
     let _ = Lwt.try_bind
-      (fun () -> process_eval s driver >>= fun results ->
-      make_values msg.header.corr_id results >>= fun rmsg ->
+      (fun () -> process_incoming_eval s driver >>= fun results ->
+      let rmsg = make_values msg.header.corr_id results in
       send_to_socket rmsg self.buffer_pool self.sock)
         (fun () -> Lwt.return_unit)
         (fun ex -> let%lwt _ = Logs_lwt.warn (fun m -> m "Eval's callback raised an exception: %s\n %s" (Printexc.to_string ex) (Printexc.get_backtrace ())) in
-          make_error msg.header.corr_id INTERNAL_SERVER_ERROR >>= fun rmsg ->
+          let rmsg = make_error msg.header.corr_id INTERNAL_SERVER_ERROR in
           send_to_socket rmsg self.buffer_pool self.sock)
     in
     (* Return unit immediatly to release socket reading thread *)
@@ -166,20 +166,20 @@ let check_reply_ok corr_id (replymsgs:Yaks_fe_sock_types.message list) =
 
 let process_login props (driver:t) =
   let _ = Logs_lwt.info (fun m -> m "[YASD]: LOGIN") in
-  make_login props
-  >>= fun msg -> process msg driver
+  let msg = make_login props in
+  process msg driver
   >>= check_reply_ok msg.header.corr_id
 
 let process_logout (driver:t) =
   let _ = Logs_lwt.info (fun m -> m "[YASD]: LOGOUT") in
-  make_logout ()
-  >>= fun msg -> process msg driver
+  let msg = make_logout () in
+  process msg driver
   >>= check_reply_ok msg.header.corr_id
 
 let process_workspace path (driver:t) =
   let _ = Logs_lwt.info (fun m -> m "[YASD]: WORKSPACE") in
-  make_workspace path
-  >>= fun msg -> process msg driver
+  let msg = make_workspace path in
+  process msg driver
   >>= fun rmsgs ->
     if List.length rmsgs <> 1 then
       Lwt.fail_with @@ Printf.sprintf "[YAS]: Expected 1 OK reply, but get %d replies" (List.length rmsgs)
@@ -188,10 +188,10 @@ let process_workspace path (driver:t) =
       let wsid = Apero.Properties.find Yaks_properties.Admin.workspaceid rmsg.header.properties in
       Lwt.return wsid
 
-let process_get ?quorum ?workspace selector (driver:t) =
+let process_get ?quorum ws_props selector (driver:t) =
   let _ = Logs_lwt.info (fun m -> m "[YASD]: GET on %s" (Selector.to_string selector)) in
-  make_get ?quorum ?workspace selector
-  >>= fun msg -> process msg driver
+  let msg = make_get ?quorum ws_props selector in
+  process msg driver
   >>= fun rmsgs ->
     if List.length rmsgs = 0 then
       Lwt.fail_with @@ Printf.sprintf "[YAS]: GET on %s: expected at least 1 reply, but get 0 reply" (Selector.to_string selector)
@@ -211,28 +211,28 @@ let process_get ?quorum ?workspace selector (driver:t) =
         Lwt.fail_with @@ Printf.sprintf "[YAS]: GET on %s: ErrNo %d" (Selector.to_string selector) errno
       | _ -> Lwt.fail_with @@ Printf.sprintf "[YAS]: GET on %s: Received an invalid reply (wrong body type)" (Selector.to_string selector)
 
-let process_put ?quorum ?workspace path value (driver:t) =
+let process_put ?quorum ws_props path value (driver:t) =
   let _ = Logs_lwt.info (fun m -> m "[YASD]: PUT on %s -> %s" (Path.to_string path) (Value.to_string value)) in
-  make_put ?quorum ?workspace path value
-  >>= fun msg -> process msg driver
+  let msg = make_put ?quorum ws_props path value in
+  process msg driver
   >>= check_reply_ok msg.header.corr_id
 
-let process_update ?quorum ?workspace path value (driver:t) =
+let process_update ?quorum ws_props path value (driver:t) =
   let _ = Logs_lwt.info (fun m -> m "[YASD]: PUT on %s -> %s" (Path.to_string path) (Value.to_string value)) in
-  make_update ?quorum ?workspace path value
-  >>= fun msg -> process msg driver
+  let msg = make_update ?quorum ws_props path value in
+  process msg driver
   >>= check_reply_ok msg.header.corr_id
 
-let process_remove ?quorum ?workspace path (driver:t) =
+let process_remove ?quorum ws_props path (driver:t) =
   let _ = Logs_lwt.info (fun m -> m "[YASD]: REMOVE") in
-  make_remove ?quorum ?workspace path
-  >>= fun msg -> process msg driver
+  let msg = make_remove ?quorum ws_props path in
+  process msg driver
   >>= check_reply_ok msg.header.corr_id
 
-let process_subscribe ?workspace ?(listener=fun _ -> Lwt.return_unit) selector (driver:t) =
+let process_subscribe ws_props ?(listener=fun _ -> Lwt.return_unit) selector (driver:t) =
   let _ = Logs_lwt.info (fun m -> m "[YASD]: SUB on %s" (Selector.to_string selector)) in
-  make_sub ?workspace selector
-  >>= fun msg ->  process msg driver
+  let msg = make_sub ws_props selector in
+   process msg driver
   >>= fun rmsgs ->
     if List.length rmsgs <> 1 then
       Lwt.fail_with @@ Printf.sprintf "[YAS]: Expected 1 OK reply, but get %d replies" (List.length rmsgs)
@@ -244,8 +244,8 @@ let process_subscribe ?workspace ?(listener=fun _ -> Lwt.return_unit) selector (
 
 let process_unsubscribe subid (driver:t) =
   let _ = Logs_lwt.info (fun m -> m "[YASD]: UNSUB on %s" subid) in
-  make_unsub subid
-  >>= fun msg ->  process msg driver
+  let msg = make_unsub subid in
+   process msg driver
   >>= check_reply_ok msg.header.corr_id
   >>= fun () ->
     MVar.guarded driver @@ fun self ->
@@ -259,10 +259,10 @@ let to_absolute_path ?workpath path =
     | None -> Path.add_prefix ~prefix:(Path.of_string "/") path
   else path
 
-let process_register_eval ?workspace ?workpath path eval_callback (driver:t) =
+let process_register_eval ws_props ?workpath path eval_callback (driver:t) =
   let _ = Logs_lwt.info (fun m -> m "[YASD]: REG_EVAL on %s" (Path.to_string path)) in
-  make_reg_eval ?workspace path
-  >>= fun msg ->  process msg driver
+  let msg = make_reg_eval ws_props path in
+   process msg driver
   >>= check_reply_ok msg.header.corr_id
   >>= fun () ->
     (* Note: callbacks are locally registered with absolute path since evals will come with absolute selectors *)
@@ -270,20 +270,20 @@ let process_register_eval ?workspace ?workpath path eval_callback (driver:t) =
     MVar.guarded driver @@ fun self ->
     MVar.return () {self with evals = EvalsMap.add abspath eval_callback self.evals}
 
-let process_unregister_eval ?workspace ?workpath path (driver:t) =
+let process_unregister_eval ws_props ?workpath path (driver:t) =
   let _ = Logs_lwt.info (fun m -> m "[YASD]: UNREG_EVAL on %s" (Path.to_string path)) in
-  make_unreg_eval ?workspace path
-  >>= fun msg ->  process msg driver
+  let msg = make_unreg_eval ws_props path in
+   process msg driver
   >>= check_reply_ok msg.header.corr_id
   >>= fun () ->
     let abspath = to_absolute_path ?workpath path in
     MVar.guarded driver @@ fun self ->
     MVar.return () {self with evals = EvalsMap.remove abspath self.evals}
 
-let process_eval ?multiplicity ?workspace selector (driver:t) =
+let process_eval ?multiplicity ws_props selector (driver:t) =
   let _ = Logs_lwt.info (fun m -> m "[YASD]: EVAL on %s" (Selector.to_string selector)) in
-  make_eval ?multiplicity ?workspace selector
-  >>= fun msg -> process msg driver
+  let msg = make_eval ?multiplicity ws_props selector in
+  process msg driver
   >>= fun rmsgs ->
     if List.length rmsgs = 0 then
       Lwt.fail_with @@ Printf.sprintf "[YAS]: EVAL on %s: expected at least 1 reply, but get 0 reply" (Selector.to_string selector)
