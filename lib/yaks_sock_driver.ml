@@ -62,28 +62,32 @@ let process_incoming_eval selector (driver:t) =
     EvalsMap.fold (fun path eval l -> (path,eval)::l) matching_evals [] |>
     Lwt_list.map_p (fun (path, eval) -> eval path params >>= fun result -> Lwt.return (path, result) )
 
-let receiver_loop (driver:t) = 
+let receiver_loop (driver:t) buffer_pool = 
   let open Apero in
   let open Apero.Infix in
   MVar.read driver >>= fun self ->
   let%lwt len = Net.read_vle self.sock >>= Vle.to_int %> Lwt.return in
   Logs.debug (fun m -> m "Message lenght : %d" len);
-  let buf = Abuf.create len in
-  let%lwt n = Net.read_all self.sock buf len in
-  let () = check_socket self.sock in
-  Logs.debug (fun m -> m "Read %d bytes out of the socket" n);
-  (try decode_message buf
-  with e ->  Logs.err (fun m -> m "Failed in parsing message %s" (Printexc.to_string e)) ; raise e) |> fun msg ->
+  Lwt_pool.use buffer_pool (fun buf ->
+    Abuf.clear buf;
+    let%lwt n = Net.read_all self.sock buf len in
+    let () = check_socket self.sock in
+    Logs.debug (fun m -> m "Read %d bytes out of the socket" n);
+    (try Lwt.return @@ decode_message buf
+    with e ->  Logs.err (fun m -> m "Failed in parsing message %s" (Printexc.to_string e)) ; raise e))
+  >>= fun msg ->
   match (msg.header.mid, msg.body) with
   | (NOTIFY, YNotification (subid, data)) ->
     MVar.read driver >>= fun self ->
     (match ListenersMap.find_opt subid self.subscribers with
     | Some cb ->
       (* Run listener's callback in future (catching exceptions) *)
-      let _ =  Lwt.try_bind (fun () -> Logs.debug (fun m -> m "Notify received. Call listener for subscription %s" subid); cb data)
-        (fun () -> Lwt.return_unit)
-        (fun ex -> Logs.warn (fun m -> m "Listener's callback of subscription %s raised an exception: %s\n %s" subid (Printexc.to_string ex) (Printexc.get_backtrace ())); Lwt.return_unit)
-      in
+      Lwt.async 
+        begin
+          fun () -> Lwt.try_bind (fun () -> Logs.debug (fun m -> m "Notify received. Call listener for subscription %s" subid); cb data)
+          (fun () -> Lwt.return_unit)
+          (fun ex -> Logs.warn (fun m -> m "Listener's callback of subscription %s raised an exception: %s\n %s" subid (Printexc.to_string ex) (Printexc.get_backtrace ())); Lwt.return_unit)
+        end;
       (* Return unit immediatly to release socket reading thread *)
       Lwt.return_unit
     | None ->  
@@ -117,20 +121,22 @@ let receiver_loop (driver:t) =
       MVar.return () self)
     )
 
-let rec loop driver  () =
-  receiver_loop driver >>= loop driver
+let rec loop driver buffer_pool () =
+  receiver_loop driver buffer_pool >>= loop driver buffer_pool
 
 let create locator = 
   let sock = Lwt_unix.socket PF_INET SOCK_STREAM 0 in
   Apero_net.connect sock locator >>= fun s ->
+  let recv_pool = Lwt_pool.create max_buffer_count (fun () -> Lwt.return @@ Abuf.create_bigstring ~grow:8192 max_buffer_size) in
+  let send_pool = Lwt_pool.create max_buffer_count (fun () -> Lwt.return @@ Abuf.create_bigstring ~grow:8192 max_buffer_size) in
   let driver = MVar.create {
     sock = s;
     working_set = WorkingMap.empty;
     subscribers = ListenersMap.empty;
     evals = EvalsMap.empty;
-    buffer_pool = Lwt_pool.create max_buffer_count (fun () -> Lwt.return @@ Abuf.create_bigstring ~grow:8192 max_buffer_size) }
+    buffer_pool=send_pool }
   in
-  let _ = loop driver () in
+  let _ = loop driver recv_pool () in
   Lwt.return driver
 
 let destroy driver =
