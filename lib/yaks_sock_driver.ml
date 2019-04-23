@@ -137,13 +137,18 @@ let destroy driver =
   MVar.read driver >>= fun d ->
   Apero_net.safe_close d.sock
 
-let process (msg:Yaks_fe_sock_types.message) driver = 
+let no_reply = Lwt.return []
+
+let process (msg:Yaks_fe_sock_types.message) ?(expect_reply=true) driver = 
   MVar.guarded driver @@
   fun self ->
-  let promise, completer = Lwt.wait () in
   send_to_socket msg self.buffer_pool self.sock
   >>= fun _ ->
-  MVar.return_lwt promise {self with working_set = WorkingMap.add msg.header.corr_id (completer,[]) self.working_set}
+  if expect_reply then
+    let promise, completer = Lwt.wait () in
+    MVar.return_lwt promise {self with working_set = WorkingMap.add msg.header.corr_id (completer,[]) self.working_set}
+  else
+    MVar.return_lwt no_reply self
 
 let check_reply_ok corr_id (replymsgs:Yaks_fe_sock_types.message list) =
   if List.length replymsgs <> 1 then
@@ -212,8 +217,8 @@ let process_get ?quorum ws_props selector (driver:t) =
 let process_put ?quorum ws_props path value (driver:t) =
   Logs.info (fun m -> m "[YASD]: PUT on %s -> %s" (Path.to_string path) (Value.to_string value));
   let msg = make_put ?quorum ws_props path value in
-  process msg driver
-  >>= check_reply_ok msg.header.corr_id
+  process msg ~expect_reply:false driver
+  >>= fun _ -> Lwt.return_unit
 
 let process_update ?quorum ws_props path value (driver:t) =
   Logs.info (fun m -> m "[YASD]: PUT on %s -> %s" (Path.to_string path) (Value.to_string value));
