@@ -3,20 +3,24 @@ open Apero
 open Yaks_ocaml
 open Yaks.Infix
 
-type state = {mutable starttime:float; mutable count:int;}
+type state = {mutable starttime: float; mutable count: int; n: int}
 
-let state =  {starttime=0.0; count=0}
+let state =  {starttime=0.0; count=0; n = 50000}
 
 
 let obs _ = 
-    let now = Unix.gettimeofday() in 
-      Lwt.return @@ match state.starttime with 
-    | 0.0 -> state.starttime <- now; state.count <- 1
-    | time when now < (time +. 1.0) -> state.count <- state.count + 1
-    | _ -> 
-      Printf.printf "%d\n%!" (state.count + 1)
-      ; state.starttime <-now
-      ; state.count <- 0 
+    (match state.count with 
+      | 0 ->         
+        state.starttime <- Unix.gettimeofday ();
+        state.count <- state.count +1 
+      | i when i = state.n -> 
+        let delta = Unix.gettimeofday () -. state.starttime in 
+        let thr = ((float_of_int) state.n) /. delta in            
+        print_endline (string_of_float thr);
+        state.count <- 0
+      | _ ->                  
+        state.count <- state.count +1)
+      ; Lwt.return_unit
 
 let run locator =
     let%lwt y = Yaks.login locator Properties.empty in 
