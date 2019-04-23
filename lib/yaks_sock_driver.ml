@@ -23,12 +23,10 @@ let max_buffer_count = 32
 
 
 let check_socket sock = 
-  let _ =
-    match Lwt_unix.state sock with
-    | Opened -> ignore @@ Logs_lwt.info (fun m -> m "Socket is open")
-    | Closed -> ignore @@ Logs_lwt.info (fun m -> m "Socket is closed")
-    | Aborted e -> ignore @@ Logs_lwt.info (fun m -> m "Socket is aborted: %s" (Printexc.to_string e))
-  in ()
+  match Lwt_unix.state sock with
+  | Opened -> Logs.info (fun m -> m "Socket is open")
+  | Closed -> Logs.info (fun m -> m "Socket is closed")
+  | Aborted e -> Logs.info (fun m -> m "Socket is aborted: %s" (Printexc.to_string e))
 
 let send_to_socket msg pool sock =
   let open Apero in
@@ -42,11 +40,11 @@ let send_to_socket msg pool sock =
       Lwt.return @@ Abuf.wrap [lbuf; buf]
     )
   ) >>= fun buf ->
-  Logs_lwt.debug (fun m -> m "Sending message to socket") >>= fun _ ->
+  Logs.debug (fun m -> m "Sending message to socket");
   check_socket sock;
   Lwt.catch (fun () -> Net.write_all sock buf)
-            (fun e ->  Logs_lwt.err (fun m -> m "Failed in writing message: %s" (Printexc.to_string e)) >>= fun () -> Lwt.fail e) >>= fun bs ->
-  Logs_lwt.debug (fun m -> m "Sended %d bytes" bs)
+            (fun e ->  Logs.err (fun m -> m "Failed in writing message: %s" (Printexc.to_string e)); Lwt.fail e)
+  >>= fun bs -> Logs.debug (fun m -> m "Sent %d bytes" bs); Lwt.return_unit
 
 
 let process_incoming_eval selector (driver:t) =
@@ -57,9 +55,9 @@ let process_incoming_eval selector (driver:t) =
     | None -> Properties.empty
   in
   let matching_evals = EvalsMap.filter (fun path _ -> Selector.is_matching_path path selector) self.evals in
-  if (EvalsMap.is_empty matching_evals) then
-    let%lwt _ = Logs_lwt.warn (fun m -> m "No matching eval for GET on: %s" (Selector.to_string selector)) in
-    Lwt.return []
+  if (EvalsMap.is_empty matching_evals) then (
+    Logs.warn (fun m -> m "No matching eval for GET on: %s" (Selector.to_string selector));
+    Lwt.return [])
   else
     EvalsMap.fold (fun path eval l -> (path,eval)::l) matching_evals [] |>
     Lwt_list.map_p (fun (path, eval) -> eval path params >>= fun result -> Lwt.return (path, result) )
@@ -69,11 +67,11 @@ let receiver_loop (driver:t) =
   let open Apero.Infix in
   MVar.read driver >>= fun self ->
   let%lwt len = Net.read_vle self.sock >>= Vle.to_int %> Lwt.return in
-  let%lwt _ = Logs_lwt.debug (fun m -> m "Message lenght : %d" len) in
+  Logs.debug (fun m -> m "Message lenght : %d" len);
   let buf = Abuf.create len in
   let%lwt n = Net.read_all self.sock buf len in
   let () = check_socket self.sock in
-  let%lwt _ = Logs_lwt.debug (fun m -> m "Read %d bytes out of the socket" n) in
+  Logs.debug (fun m -> m "Read %d bytes out of the socket" n);
   (try decode_message buf
   with e ->  Logs.err (fun m -> m "Failed in parsing message %s" (Printexc.to_string e)) ; raise e) |> fun msg ->
   match (msg.header.mid, msg.body) with
@@ -82,14 +80,14 @@ let receiver_loop (driver:t) =
     (match ListenersMap.find_opt subid self.subscribers with
     | Some cb ->
       (* Run listener's callback in future (catching exceptions) *)
-      let _ =  Lwt.try_bind (fun () -> let%lwt _ = Logs_lwt.debug (fun m -> m "Notify received. Call listener for subscription %s" subid) in cb data)
+      let _ =  Lwt.try_bind (fun () -> Logs.debug (fun m -> m "Notify received. Call listener for subscription %s" subid); cb data)
         (fun () -> Lwt.return_unit)
-        (fun ex -> let%lwt _ = Logs_lwt.warn (fun m -> m "Listener's callback of subscription %s raised an exception: %s\n %s" subid (Printexc.to_string ex) (Printexc.get_backtrace ())) in Lwt.return_unit)
+        (fun ex -> Logs.warn (fun m -> m "Listener's callback of subscription %s raised an exception: %s\n %s" subid (Printexc.to_string ex) (Printexc.get_backtrace ())); Lwt.return_unit)
       in
       (* Return unit immediatly to release socket reading thread *)
       Lwt.return_unit
     | None ->  
-      let%lwt _ = Logs_lwt.debug (fun m -> m "Received notification with unknown subscriberid %s" subid) in
+      Logs.debug (fun m -> m "Received notification with unknown subscriberid %s" subid);
       Lwt.return_unit)
 
   | (EVAL, YSelector s) ->
@@ -99,7 +97,7 @@ let receiver_loop (driver:t) =
       let rmsg = make_values msg.header.corr_id results in
       send_to_socket rmsg self.buffer_pool self.sock)
         (fun () -> Lwt.return_unit)
-        (fun ex -> let%lwt _ = Logs_lwt.warn (fun m -> m "Eval's callback raised an exception: %s\n %s" (Printexc.to_string ex) (Printexc.get_backtrace ())) in
+        (fun ex -> Logs.warn (fun m -> m "Eval's callback raised an exception: %s\n %s" (Printexc.to_string ex) (Printexc.get_backtrace ()));
           let rmsg = make_error msg.header.corr_id INTERNAL_SERVER_ERROR in
           send_to_socket rmsg self.buffer_pool self.sock)
     in
@@ -115,7 +113,7 @@ let receiver_loop (driver:t) =
       else
         let _ = Lwt.wakeup_later resolver msg_list in
         MVar.return () {self with working_set = WorkingMap.remove msg.header.corr_id self.working_set}
-    | None -> let%lwt _ = Logs_lwt.warn (fun m -> m "Received message with unknown correlation id %Ld" msg.header.corr_id) in
+    | None -> Logs.warn (fun m -> m "Received message with unknown correlation id %Ld" msg.header.corr_id);
       MVar.return () self)
     )
 
@@ -165,19 +163,19 @@ let check_reply_ok corr_id (replymsgs:Yaks_fe_sock_types.message list) =
         Lwt.fail_with @@ Printf.sprintf "[YAS]: Received unexpected reply!!"
 
 let process_login props (driver:t) =
-  let _ = Logs_lwt.info (fun m -> m "[YASD]: LOGIN") in
+  Logs.info (fun m -> m "[YASD]: LOGIN");
   let msg = make_login props in
   process msg driver
   >>= check_reply_ok msg.header.corr_id
 
 let process_logout (driver:t) =
-  let _ = Logs_lwt.info (fun m -> m "[YASD]: LOGOUT") in
+  Logs.info (fun m -> m "[YASD]: LOGOUT");
   let msg = make_logout () in
   process msg driver
   >>= check_reply_ok msg.header.corr_id
 
 let process_workspace path (driver:t) =
-  let _ = Logs_lwt.info (fun m -> m "[YASD]: WORKSPACE") in
+  Logs.info (fun m -> m "[YASD]: WORKSPACE");
   let msg = make_workspace path in
   process msg driver
   >>= fun rmsgs ->
@@ -189,7 +187,7 @@ let process_workspace path (driver:t) =
       Lwt.return wsid
 
 let process_get ?quorum ws_props selector (driver:t) =
-  let _ = Logs_lwt.info (fun m -> m "[YASD]: GET on %s" (Selector.to_string selector)) in
+  Logs.info (fun m -> m "[YASD]: GET on %s" (Selector.to_string selector));
   let msg = make_get ?quorum ws_props selector in
   process msg driver
   >>= fun rmsgs ->
@@ -203,7 +201,7 @@ let process_get ?quorum ws_props selector (driver:t) =
           match rmsg.body with
           | YPathValueList pvs -> List.append l pvs
           | _ -> 
-            let _ = Logs_lwt.warn (fun m -> m "[YASD]: GET on %s: Received an invalid reply (wrong body type)" (Selector.to_string selector)) in
+            Logs.warn (fun m -> m "[YASD]: GET on %s: Received an invalid reply (wrong body type)" (Selector.to_string selector));
             l
           ) [] rmsgs
       | YErrorInfo e ->
@@ -212,25 +210,25 @@ let process_get ?quorum ws_props selector (driver:t) =
       | _ -> Lwt.fail_with @@ Printf.sprintf "[YAS]: GET on %s: Received an invalid reply (wrong body type)" (Selector.to_string selector)
 
 let process_put ?quorum ws_props path value (driver:t) =
-  let _ = Logs_lwt.info (fun m -> m "[YASD]: PUT on %s -> %s" (Path.to_string path) (Value.to_string value)) in
+  Logs.info (fun m -> m "[YASD]: PUT on %s -> %s" (Path.to_string path) (Value.to_string value));
   let msg = make_put ?quorum ws_props path value in
   process msg driver
   >>= check_reply_ok msg.header.corr_id
 
 let process_update ?quorum ws_props path value (driver:t) =
-  let _ = Logs_lwt.info (fun m -> m "[YASD]: PUT on %s -> %s" (Path.to_string path) (Value.to_string value)) in
+  Logs.info (fun m -> m "[YASD]: PUT on %s -> %s" (Path.to_string path) (Value.to_string value));
   let msg = make_update ?quorum ws_props path value in
   process msg driver
   >>= check_reply_ok msg.header.corr_id
 
 let process_remove ?quorum ws_props path (driver:t) =
-  let _ = Logs_lwt.info (fun m -> m "[YASD]: REMOVE") in
+  Logs.info (fun m -> m "[YASD]: REMOVE");
   let msg = make_remove ?quorum ws_props path in
   process msg driver
   >>= check_reply_ok msg.header.corr_id
 
 let process_subscribe ws_props ?(listener=fun _ -> Lwt.return_unit) selector (driver:t) =
-  let _ = Logs_lwt.info (fun m -> m "[YASD]: SUB on %s" (Selector.to_string selector)) in
+  Logs.info (fun m -> m "[YASD]: SUB on %s" (Selector.to_string selector));
   let msg = make_sub ws_props selector in
    process msg driver
   >>= fun rmsgs ->
@@ -243,7 +241,7 @@ let process_subscribe ws_props ?(listener=fun _ -> Lwt.return_unit) selector (dr
       MVar.return subid {self with subscribers = ListenersMap.add subid listener self.subscribers}
 
 let process_unsubscribe subid (driver:t) =
-  let _ = Logs_lwt.info (fun m -> m "[YASD]: UNSUB on %s" subid) in
+  Logs.info (fun m -> m "[YASD]: UNSUB on %s" subid);
   let msg = make_unsub subid in
    process msg driver
   >>= check_reply_ok msg.header.corr_id
@@ -260,7 +258,7 @@ let to_absolute_path ?workpath path =
   else path
 
 let process_register_eval ws_props ?workpath path eval_callback (driver:t) =
-  let _ = Logs_lwt.info (fun m -> m "[YASD]: REG_EVAL on %s" (Path.to_string path)) in
+  Logs.info (fun m -> m "[YASD]: REG_EVAL on %s" (Path.to_string path));
   let msg = make_reg_eval ws_props path in
    process msg driver
   >>= check_reply_ok msg.header.corr_id
@@ -271,7 +269,7 @@ let process_register_eval ws_props ?workpath path eval_callback (driver:t) =
     MVar.return () {self with evals = EvalsMap.add abspath eval_callback self.evals}
 
 let process_unregister_eval ws_props ?workpath path (driver:t) =
-  let _ = Logs_lwt.info (fun m -> m "[YASD]: UNREG_EVAL on %s" (Path.to_string path)) in
+  Logs.info (fun m -> m "[YASD]: UNREG_EVAL on %s" (Path.to_string path));
   let msg = make_unreg_eval ws_props path in
    process msg driver
   >>= check_reply_ok msg.header.corr_id
@@ -281,7 +279,7 @@ let process_unregister_eval ws_props ?workpath path (driver:t) =
     MVar.return () {self with evals = EvalsMap.remove abspath self.evals}
 
 let process_eval ?multiplicity ws_props selector (driver:t) =
-  let _ = Logs_lwt.info (fun m -> m "[YASD]: EVAL on %s" (Selector.to_string selector)) in
+  Logs.info (fun m -> m "[YASD]: EVAL on %s" (Selector.to_string selector));
   let msg = make_eval ?multiplicity ws_props selector in
   process msg driver
   >>= fun rmsgs ->
@@ -295,7 +293,7 @@ let process_eval ?multiplicity ws_props selector (driver:t) =
           match rmsg.body with
           | YPathValueList pvs -> List.append l pvs
           | _ -> 
-            let _ = Logs_lwt.warn (fun m -> m "[YASD]: EVAL on %s: Received an invalid reply (wrong body type)" (Selector.to_string selector)) in
+            Logs.warn (fun m -> m "[YASD]: EVAL on %s: Received an invalid reply (wrong body type)" (Selector.to_string selector));
             l
           ) [] rmsgs
       | YErrorInfo e ->
