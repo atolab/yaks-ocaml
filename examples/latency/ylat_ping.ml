@@ -1,0 +1,61 @@
+open Apero
+open Yaks_ocaml
+open Yaks
+open Yaks.Infix
+
+
+type state = {wr_time:float; count:int; rt_times:float list}
+let state = MVar_lwt.create_empty () 
+
+let (promise, resolver) = Lwt.task ()
+
+
+let rec put_n n ws base_path value = 
+    if n > 1 then
+        begin
+            let _ = Yaks.Workspace.put ~//base_path value ws in
+            put_n (n-1) ws base_path value 
+        end
+    else Yaks.Workspace.put ~//base_path value ws
+
+let create_data n =
+    let rec r_create_data n s = 
+        if n > 0 then
+            r_create_data (n-1) (s ^ (string_of_int @@ n mod 10))
+        else s
+    in r_create_data n ""
+ 
+
+let run locator samples size = 
+
+    let%lwt _ = MVar_lwt.put state {wr_time=Unix.gettimeofday(); count=0; rt_times=[];} in
+
+    let%lwt y = Yaks.login locator Properties.empty in 
+    let%lwt ws = Yaks.workspace ~//"/" y in 
+    let value = Value.StringValue (create_data size) in
+
+    let obs _ state = 
+        let now = Unix.gettimeofday() in 
+        (match state.count + 1 < samples with 
+        | true -> Lwt.ignore_result @@ Yaks.Workspace.put ~//"/test/lat/ping" value ws 
+        | false -> Lwt.wakeup_later resolver ());
+        Lwt.return (Lwt.return_unit, {wr_time=now; count=state.count + 1; rt_times=(now -. state.wr_time) :: state.rt_times}) in
+
+    let%lwt _ = Yaks.Workspace.subscribe ~listener:(fun ds -> MVar_lwt.guarded state (obs ds))  ~/*"/test/lat/pong"  ws in
+
+    
+    let%lwt () = put_n samples ws "/test/lat/ping" value in
+    let%lwt _ = promise in
+    let%lwt state = MVar_lwt.take state in
+    state.rt_times |> List.rev |> List.iter (fun time -> Printf.printf "%i\n" (int_of_float (time *. 1000000.0))); 
+    Printf.printf "%!";
+
+    Lwt.return_unit
+
+let () =
+    let addr = Array.get Sys.argv 1 in 
+    let port = Array.get Sys.argv 2 in 
+    let samples = int_of_string (Array.get Sys.argv 3) in 
+    let size = int_of_string (Array.get Sys.argv 4) in 
+    let locator = Apero.Option.get @@ Apero_net.Locator.of_string @@ Printf.sprintf "tcp/%s:%s" addr port in 
+    Lwt_main.run @@ run locator samples size 
