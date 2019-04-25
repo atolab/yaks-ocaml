@@ -16,7 +16,6 @@ let get_n_p n selector ws  =
     let rec get_n_p n selector ws  = 
         if n > 1 then
             begin
-                (* let%lwt _ = Lwt_io.printf "get %d\n" n in *)
                 let p = Yaks.Workspace.get selector ws >|= ignore in 
                 let ps = get_n_p (n-1) selector ws in 
                 p :: ps
@@ -65,11 +64,5 @@ let run addr port samples size exec_type =
 
 
 let () =
-    (* let addr = Array.get Sys.argv 1 in
-    let port = Array.get Sys.argv 2 in 
-    let samples = int_of_string (Array.get Sys.argv 3) in
-    let size = int_of_string (Array.get Sys.argv 4) in
-    let locator = Apero.Option.get @@ Apero_net.Locator.of_string @@ Printf.sprintf "tcp/%s:%s" addr port in      
-    Lwt_main.run @@ run locator samples size *)
     let _ = Term.(eval (const run $ addr $port $ samples $ size $exec_type, Term.info "ythrg")) in  ()
 

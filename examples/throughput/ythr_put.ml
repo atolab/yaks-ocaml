@@ -8,7 +8,7 @@ let rec put_n n ws base_path value =
     let path = ~//base_path in 
     if n > 1 then
         begin
-            let _ = Yaks.Workspace.put path value ws in 
+            let%lwt _ = Yaks.Workspace.put path value ws in 
             put_n (n-1) ws base_path value  
         end 
     else Yaks.Workspace.put  path value ws
@@ -23,9 +23,15 @@ let create_data n =
 let run locator samples size =
     let%lwt y = Yaks.login locator Properties.empty in 
     let%lwt ws = Yaks.workspace ~//"/" y  in
-    let base_path = "/test/thr" in 
+    let base_path = "/ythrp/sample" in 
     let value = Value.StringValue (create_data size) in 
+    let start = Unix.gettimeofday () in 
     let%lwt () = put_n samples ws base_path value  in
+    let stop = Unix.gettimeofday () in 
+    let delta = stop -. start in 
+    let%lwt  _ = Lwt_io.printf "Sent %i samples in %fsec \n" samples delta in
+    let%lwt  _ = Lwt_io.printf "Throughput: %f msg/sec\n" ((float_of_int samples) /. delta) in
+    let%lwt  _ = Lwt_io.printf "Average: %f\n" (( delta) /. float_of_int samples) in
     Lwt.return_unit
 
 let () =

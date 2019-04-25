@@ -1,5 +1,5 @@
 (executables
- (names ylatp ylat_ping ylat_pong)
+ (names ylatp ylatg ylat_ping ylat_pong)
   (libraries yaks-ocaml yaks-common logs logs.fmt logs.cli fmt fmt.cli fmt.tty cmdliner)
 (preprocess
     (pps ppx_deriving.show ppx_deriving.ord lwt_ppx ppx_cstruct)))

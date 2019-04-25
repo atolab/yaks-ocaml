@@ -25,7 +25,7 @@ let obs _ =
 let run locator =
     let%lwt y = Yaks.login locator Properties.empty in 
     let%lwt ws = Yaks.workspace ~//"/" y  in
-    let base_path = "/test/thr" in  
+    let base_path = "/ythrp/sample" in  
     let%lwt _ = Yaks.Workspace.subscribe ~listener:obs ~/*base_path ws in
     let%lwt _ = Lwt_unix.sleep 3000.0 in 
     Lwt.return_unit
