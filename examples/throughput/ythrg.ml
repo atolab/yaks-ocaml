@@ -51,7 +51,7 @@ let run addr port samples size exec_type =
 
     let selector = ~/*"/test/thr/get" in 
     let start = Unix.gettimeofday () in 
-    let%lwt () = (match exec_type with
+    let%lwt _ = (match exec_type with
                     | "p" | "P" -> get_n_p samples selector ws
                     | _ -> get_n_s samples selector ws) in
     let stop = Unix.gettimeofday () in 
@@ -60,8 +60,6 @@ let run addr port samples size exec_type =
 
     Lwt.return_unit
   )
-
-
 
 let () =
     let _ = Term.(eval (const run $ addr $port $ samples $ size $exec_type, Term.info "ythrg")) in  ()

@@ -8,21 +8,6 @@ let addr = Arg.(value & opt string "127.0.0.1" & info ["a"; "addr"] ~docv:"ADDRE
 let port = Arg.(value & opt string "7887" & info ["p"; "port"] ~docv:"PORT" ~doc:"port")
 let samples = Arg.(value & opt int 10000 & info ["n"; "samples"] ~docv:"SAMPLES" ~doc:"number of samples")
 let size = Arg.(value & opt int 1024 & info ["s"; "size"] ~docv:"SIZE" ~doc:"payload size")
-let exec_type = Arg.(value & opt string "s" & info ["t"; "exec_type"] ~docv:"EXEC_TYPE" ~doc:"s:serial or p:parallel")
-
-(* performs gets in parallel*)
-let rec get_n_p n selector ws result = 
-    if n > 1 then
-        begin
-            let start = Unix.gettimeofday () in    
-            let _ = Yaks.Workspace.get selector ws  in 
-            let stop = Unix.gettimeofday () in 
-            let delta = stop -. start in 
-            let lt = int_of_float (delta *. 1000000.0) in
-            Array.set result (n-1) lt;
-            get_n_p (n-1) selector ws result 
-        end 
-    else Yaks.Workspace.get selector ws  
     
 (* performs gets in serial*)
 let rec get_n_s n selector ws result  = 
@@ -46,7 +31,7 @@ let create_data n =
     in r_create_data n ""
 
 
-let run addr port samples size exec_type =
+let run addr port samples size =
   Lwt_main.run 
   (
     let result = Array.make samples 0 in
@@ -56,13 +41,10 @@ let run addr port samples size exec_type =
     let value = Value.StringValue (create_data size) in
     let _ = Yaks.Workspace.put ~//"test/lat/get" value ws in
     let selector = ~/*"/test/thr/get" in 
-    let%lwt _ = (match exec_type with
-                    | "p" | "P" -> get_n_p samples selector ws result
-                    | _ -> get_n_s samples selector ws result) in
+    let%lwt _ = get_n_s samples selector ws result in
     let _ = Array.iter (Printf.printf "%i\n") result in
     Lwt.return_unit
   )
 
 let () =
-    
-    let _ = Term.(eval (const run $ addr $port $ samples $ size $exec_type, Term.info "ylatg")) in  ()
+    let _ = Term.(eval (const run $ addr $port $ samples $ size, Term.info "ylatg")) in  ()
