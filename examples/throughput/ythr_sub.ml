@@ -2,6 +2,10 @@
 open Apero
 open Yaks_ocaml
 open Yaks.Infix
+open Cmdliner
+
+let addr = Arg.(value & opt string "127.0.0.1" & info ["a"; "addr"] ~docv:"ADDRESS" ~doc:"address")
+let port = Arg.(value & opt string "7887" & info ["p"; "port"] ~docv:"PORT" ~doc:"port")
 
 type state = {mutable starttime: float; mutable count: int; n: int}
 
@@ -15,23 +19,24 @@ let obs _ =
         state.count <- state.count +1 
       | i when i = state.n -> 
         let delta = Unix.gettimeofday () -. state.starttime in 
-        let thr = ((float_of_int) state.n) /. delta in            
+        let thr = ((float_of_int) state.n) /. delta in  
         print_endline (string_of_float thr);
         state.count <- 0
       | _ ->                  
         state.count <- state.count +1)
       ; Lwt.return_unit
 
-let run locator =
+let run addr port =
+  Lwt_main.run 
+  (
+    let locator = Apero.Option.get @@ Apero_net.Locator.of_string @@ Printf.sprintf "tcp/%s:%s" addr port in 
     let%lwt y = Yaks.login locator Properties.empty in 
     let%lwt ws = Yaks.workspace ~//"/" y  in
-    let base_path = "/ythrp/sample" in  
-    let%lwt _ = Yaks.Workspace.subscribe ~listener:obs ~/*base_path ws in
+    let path = "/ythrp/sample" in  
+    let%lwt _ = Yaks.Workspace.subscribe ~listener:obs ~/*path ws in
     let%lwt _ = Lwt_unix.sleep 3000.0 in 
     Lwt.return_unit
+  )
 
 let () =
-    let addr = Array.get Sys.argv 1 in
-    let port = Array.get Sys.argv 2 in 
-    let locator = Apero.Option.get @@ Apero_net.Locator.of_string @@ Printf.sprintf "tcp/%s:%s" addr port in 
-    Lwt_main.run @@ run locator 
+    let _ = Term.(eval (const run $ addr $port, Term.info "ythr_sub")) in  ()

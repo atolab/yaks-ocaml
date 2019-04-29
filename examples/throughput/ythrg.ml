@@ -56,8 +56,9 @@ let run addr port samples size exec_type =
                     | _ -> get_n_s samples selector ws) in
     let stop = Unix.gettimeofday () in 
     let delta = stop -. start in 
-    let%lwt _ = Lwt_io.printf "Throughput: %f\n" ((float_of_int samples) /. delta) in
-
+    let%lwt  _ = Lwt_io.printf "Sent %i samples in %fsec \n" samples delta in
+    let%lwt  _ = Lwt_io.printf "Throughput: %f msg/sec\n" ((float_of_int samples) /. delta) in
+    let%lwt  _ = Lwt_io.printf "Average: %f\n" (( delta) /. float_of_int samples) in
     Lwt.return_unit
   )
 
