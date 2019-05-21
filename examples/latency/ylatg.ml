@@ -35,7 +35,7 @@ let run addr port samples size =
   Lwt_main.run 
   (
     let result = Array.make samples 0 in
-    let locator = Apero.Option.get @@ Apero_net.Locator.of_string @@ Printf.sprintf "tcp/%s:%s" addr port in  
+    let locator = Printf.sprintf "tcp/%s:%s" addr port in  
     let%lwt y = Yaks.login locator Properties.empty in 
     let%lwt ws = Yaks.workspace ~//"/" y in 
     let value = Value.StringValue (create_data size) in

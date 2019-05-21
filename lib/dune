@@ -1,12 +1,12 @@
 (library
  (name            yaks_ocaml)
-  (modules yaks_api yaks_ocaml yaks_sock_driver yaks_sock_types)
-  (public_name     yaks-ocaml)
+  (modules        yaks_ocaml yaks_api)
+  (public_name    yaks-ocaml)
   (wrapped     false)
-  (libraries       apero-core apero-net yaks-common cstruct lwt lwt.unix logs logs.lwt ppx_deriving.show ppx_deriving.ord)
+  (libraries       yaks-common zenoh-ocaml cstruct lwt lwt.unix logs logs.lwt ppx_deriving.show ppx_deriving.ord)
   (preprocess
     (pps ppx_deriving.show ppx_deriving.ord lwt_ppx ppx_cstruct)))
 
 (toplevel
   (name yaks_toplevel)
-  (libraries compiler-libs.toplevel yaks_ocaml apero-core apero-net yaks-common cstruct lwt lwt.unix logs logs.lwt ppx_deriving.show ppx_deriving.ord))
+  (libraries compiler-libs.toplevel yaks_ocaml yaks-common zenoh-ocaml cstruct lwt lwt.unix logs logs.lwt ppx_deriving.show ppx_deriving.ord))

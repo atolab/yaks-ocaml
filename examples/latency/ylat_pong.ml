@@ -15,7 +15,7 @@ let rec infinitewait () =
 let run addr port =
   Lwt_main.run 
   (
-    let locator = Apero.Option.get @@ Apero_net.Locator.of_string @@ Printf.sprintf "tcp/%s:%s" addr port in 
+    let locator = Printf.sprintf "tcp/%s:%s" addr port in 
     let%lwt y = Yaks.login locator Properties.empty in 
     let%lwt ws = Yaks.workspace ~//"/" y  in
     let%lwt _ = Yaks.Workspace.subscribe ~/*"/test/lat/ping" ws 

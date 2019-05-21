@@ -11,7 +11,7 @@ type stid = string
 (** Storage identifier (must be unique per Yaks service) *)
 type sid = string
 (** Session identifier (unique per Yaks service) *)
-type subid = string
+type subid = Zenoh.sub
 (** Subscriber identifier (unique per Yaks service) *)
 
 
@@ -121,22 +121,6 @@ end
 module Admin : sig
   type t
 
-  val add_frontend : ?yaks:yid -> feid -> properties -> t -> unit Lwt.t
-  (** [add_frontend yaks feid p a] adds in the Yaks service with identifier [yaks] (by default it will be the service this API is connected to)
-      a frontend with [feid] as identifier and [p] as properties. *)
-  
-  val get_frontends : ?yaks:yid -> t -> (feid * properties) list Lwt.t
-  (** [get_frontends yaks a] returns the caracteristics (identifier and properties) of all the frontends of the Yaks service with identifier [yaks]
-      (by default it will be the service this API is connected to). *)
-
-  val get_frontend : ?yaks:yid -> feid -> t -> properties option Lwt.t
-  (** [get_frontend yaks feid a] returns the properties of the frontend with identifier [feid] of the Yaks service with identifier [yaks]
-      (by default it will be the service this API is connected to). *)
-
-  val remove_frontend : ?yaks:yid -> feid -> t -> unit Lwt.t
-  (** [remove_frontend yaks feid a] removes the frontend with identifier [feid] from the Yaks service with identifier [yaks]
-      (by default it will be the service this API is connected to). *)
-
   val add_backend : ?yaks:yid -> beid -> properties -> t -> unit Lwt.t
   (** [add_backend yaks beid p a] adds in the Yaks service with identifier [yaks] (by default it will be the service this API is connected to)
       a backend with [beid] as identifier and [p] as properties. *)
@@ -171,19 +155,6 @@ module Admin : sig
   (** [remove_storage yaks stid a] removes the storage with identifier [stid] from the Yaks service with identifier [yaks]
       (by default it will be the service this API is connected to). *)
 
-  val get_sessions : ?yaks:yid -> ?frontend:feid -> t -> (sid * properties) list Lwt.t
-  (** [get_sessions yaks feid a] returns the caracteristics (identifier and properties) of all the sessions that are open on the Yaks service with identifier [yaks]
-      (by default it will be the service this API is connected to) and that are managed by the frontend with identifier [feid].
-      If [feid] is not specified, all the sessions caracterisitics are returned, whatever their frontend. *)
-
-  val close_session : ?yaks:yid -> sid -> t -> unit Lwt.t
-  (** [close_sessions yaks sid a] force-closes the session with identifier [sid] from the Yaks service with identifier [yaks]
-      (by default it will be the service this API is connected to). *)
-
-  val get_subscriptions : ?yaks:yid -> sid -> t -> Selector.t list Lwt.t
-  (** [get_subscriptions yaks a] returns the selectors of all the subscriptions made by a session with identifier [sid] on the Yaks service with identifier [yaks]
-      (by default it will be the service this API is connected to). *)
-
 end
 
 module Infix : sig
@@ -207,7 +178,7 @@ end
 
 type t
 
-val login : Apero_net.Locator.t -> properties -> t Lwt.t
+val login : string -> properties -> t Lwt.t
 (** [login l p] connects this API to the Yaks service using the locator [l] and login with the properties [p]. *)
 
 val logout : t -> unit Lwt.t
