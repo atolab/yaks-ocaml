@@ -37,6 +37,12 @@ module Workspace = struct
       Logs.debug (fun m -> m "[Yapi]: GET on %s" (Selector.to_string selector));
       Yaks_zutils.query_values t.zenoh selector
 
+    let sget ?quorum ?encoding ?fallback selector t =
+      ignore quorum; ignore encoding; ignore fallback;
+      let selector = absolute_selector selector t in
+      Logs.debug (fun m -> m "[Yapi]: GET on %s" (Selector.to_string selector));
+      Yaks_zutils.squery_values t.zenoh selector
+
     let put ?quorum path value t =
       ignore quorum;
       let path = absolute_path path t in

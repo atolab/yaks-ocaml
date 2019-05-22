@@ -57,6 +57,9 @@ module Workspace : sig
     - Drop: values that cannot be transcoded are dropped.
     - Keep: values that cannot be transcoded are kept with their original encoding and left for the application to deal with.  *)
 
+  val sget : ?quorum:int -> ?encoding:Value.encoding -> ?fallback:transcoding_fallback -> Selector.t -> t -> (Path.t * Value.t) Lwt_stream.t
+  (** Similar to [get], but returning the set of tuples {e \{ <path,value> \} } as a Lwt_stream.t *)
+
   val put : ?quorum:int -> Path.t -> Value.t -> t -> unit Lwt.t
   (** [put quorum path value ws]  
     - causes the notification of all {e subscriptions} whose selector matches [path], and
