@@ -9,32 +9,32 @@ let addr = Arg.(value & opt string "127.0.0.1" & info ["a"; "addr"] ~docv:"ADDRE
 let port = Arg.(value & opt string "7447" & info ["p"; "port"] ~docv:"PORT" ~doc:"port")
 let samples = Arg.(value & opt int 100000 & info ["n"; "samples"] ~docv:"SAMPLES" ~doc:"number of samples")
 let size = Arg.(value & opt int 1024 & info ["s"; "size"] ~docv:"SIZE" ~doc:"payload size")
-let exec_type = Arg.(value & opt string "s" & info ["t"; "exec_type"] ~docv:"EXEC_TYPE" ~doc:"s:serial or p:parallel")
+let register_path = Arg.(value & opt bool true & info ["r"; "register_path"] ~docv:"true|false" ~doc:"Use RegisteredPath or Workspage put operation")
 
-let rec put_n_p n ws path value = 
+let rec put_registered_path n rpath value =
     if n > 1 then
         begin
-            let _ = Yaks.Workspace.put path value ws in 
-            put_n_p (n-1) ws path value 
-        end 
-    else Yaks.Workspace.put path value ws
+            let%lwt _ = Yaks.RegisteredPath.put value rpath in
+            put_registered_path (n-1) rpath value
+        end
+    else Yaks.RegisteredPath.put value rpath
 
-let rec put_n_s n ws path value = 
+let rec put_path n ws path value =
     if n > 1 then
         begin
-            let%lwt _ = Yaks.Workspace.put path value ws in 
-            put_n_s (n-1) ws path value 
-        end 
+            let%lwt _ = Yaks.Workspace.put path value ws in
+            put_path (n-1) ws path value
+        end
     else Yaks.Workspace.put path value ws
 
 let create_data n =
-    let rec r_create_data n s = 
+    let rec r_create_data n s =
         if n > 0 then
             r_create_data (n-1) (s ^ (string_of_int @@ n mod 10))
         else s
     in  r_create_data n ""
 
-let run addr port samples size exec_type =
+let run addr port samples size register_path =
   Lwt_main.run 
   (
     let locator = Printf.sprintf "tcp/%s:%s" addr port in 
@@ -43,9 +43,12 @@ let run addr port samples size exec_type =
     let path = ~//"/ythrp/sample" in 
     let value = Value.StringValue (create_data size) in 
     let start = Unix.gettimeofday () in 
-    let%lwt () = (match exec_type with
-                | "p" | "P" -> put_n_p samples ws path value
-                | _ -> put_n_s samples ws path value) in
+    let%lwt rpath = Yaks.Workspace.register_path path ws in
+    let%lwt () =
+        if register_path
+        then put_registered_path samples rpath value
+        else put_path samples ws path value
+    in
     let stop = Unix.gettimeofday () in 
     let delta = stop -. start in 
     let%lwt  _ = Lwt_io.printf "Sent %i samples in %fsec \n" samples delta in
@@ -55,4 +58,4 @@ let run addr port samples size exec_type =
   )
 
 let () =
-    let _ = Term.(eval (const run $ addr $port $ samples $ size $exec_type, Term.info "ythr_put")) in  ()
+    let _ = Term.(eval (const run $ addr $port $ samples $ size $register_path, Term.info "ythr_put")) in  ()

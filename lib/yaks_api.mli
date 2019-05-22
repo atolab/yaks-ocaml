@@ -29,8 +29,27 @@ type transcoding_fallback = Fail | Drop | Keep
     [Keep] means the [get] operation will return the values which can't be transcoded with their original encoding. *)
 
 
+module RegisteredPath : sig
+  type t
+
+  val put : ?quorum:int -> Value.t -> t -> unit Lwt.t
+  (** Similar to [Workspace.put] for a registered path. *)
+
+  val update: ?quorum:int -> Value.t -> t -> unit Lwt.t
+  (** Similar to [Workspace.update] for a registered path. *)
+
+  val remove: ?quorum:int -> t  -> unit Lwt.t
+  (** Similar to [Workspace.remove] for a registered path. *)
+end
+
 module Workspace : sig
   type t    
+
+  val register_path : Path.t -> t -> RegisteredPath.t Lwt.t
+  (** [register_path p] registers the Path [p] as a Publisher in Zenoh and returns a [RegisteredPath.t].
+      A [RegisterdPath.t] can be used in case of successive put/update/remove on a same Path, to save bandwidth and get a better throughput.
+      The [RegisterdPath] operations use the Zenoh.stream and Zenoh.lstream operations that avoid to send the Path as a string for each publication.
+  *)
 
   val get : ?quorum:int -> ?encoding:Value.encoding -> ?fallback:transcoding_fallback -> Selector.t -> t -> (Path.t * Value.t) list Lwt.t
   (** [get quorum encoding fallback s ws] gets the set of tuples {e \{ <path,value> \} } available in YAKS for which {e path} 

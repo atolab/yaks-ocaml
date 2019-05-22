@@ -18,110 +18,140 @@ type transcoding_fallback = Fail | Drop | Keep
 
 module EvalMap = Map.Make (Path)
 
+
+module RegisteredPath = struct
+  type t =
+    { path : Path.t
+    ; pub : Zenoh.pub
+    }
+
+  let put ?quorum value t =
+    ignore quorum;
+    Logs.debug (fun m -> m "[Yapi]: PUT (stream) on %s" (Path.to_string t.path));
+    Yaks_zutils.stream_put t.pub value
+
+  let update ?quorum value t =
+    ignore quorum;
+    Logs.debug (fun m -> m "[Yapi]: UPDATE (stream) on %s" (Path.to_string t.path));
+    Yaks_zutils.stream_update t.pub value
+
+  let remove ?quorum t =
+    ignore quorum;
+    Logs.debug (fun m -> m "[Yapi]: REMOVE (stream) on %s" (Path.to_string t.path));
+    Yaks_zutils.stream_remove t.pub
+
+
+end
+
 module Workspace = struct
-    type t =
-      { zenoh : Zenoh.t
-      ; path: Path.t
-      ; evals: Zenoh.storage EvalMap.t Guard.t}
+  type t =
+    { path: Path.t
+    ; zenoh : Zenoh.t
+    ; evals: Zenoh.storage EvalMap.t Guard.t}
 
-    let absolute_path path t = 
-      if Path.is_relative path then Path.add_prefix ~prefix:t.path path else path
+  let absolute_path path t =
+    if Path.is_relative path then Path.add_prefix ~prefix:t.path path else path
 
-    let absolute_selector selector t =
-      if Selector.is_relative selector then Selector.add_prefix ~prefix:t.path selector else selector
-      
+  let absolute_selector selector t =
+    if Selector.is_relative selector then Selector.add_prefix ~prefix:t.path selector else selector
 
-    let get ?quorum ?encoding ?fallback selector t =
-      ignore quorum; ignore encoding; ignore fallback;
-      let selector = absolute_selector selector t in
-      Logs.debug (fun m -> m "[Yapi]: GET on %s" (Selector.to_string selector));
-      Yaks_zutils.query_values t.zenoh selector
+  let register_path path t =
+  let path = absolute_path path t in
+  let%lwt pub = Zenoh.publish t.zenoh (Path.to_string path) in
+  let (r:RegisteredPath.t) = { path; pub } in
+  Lwt.return r
 
-    let sget ?quorum ?encoding ?fallback selector t =
-      ignore quorum; ignore encoding; ignore fallback;
-      let selector = absolute_selector selector t in
-      Logs.debug (fun m -> m "[Yapi]: GET on %s" (Selector.to_string selector));
-      Yaks_zutils.squery_values t.zenoh selector
+  let get ?quorum ?encoding ?fallback selector t =
+    ignore quorum; ignore encoding; ignore fallback;
+    let selector = absolute_selector selector t in
+    Logs.debug (fun m -> m "[Yapi]: GET on %s" (Selector.to_string selector));
+    Yaks_zutils.query_values t.zenoh selector
 
-    let put ?quorum path value t =
-      ignore quorum;
-      let path = absolute_path path t in
-      Logs.debug (fun m -> m "[Yapi]: PUT on %s" (Path.to_string path));
-      Yaks_zutils.write_put t.zenoh path value
+  let sget ?quorum ?encoding ?fallback selector t =
+    ignore quorum; ignore encoding; ignore fallback;
+    let selector = absolute_selector selector t in
+    Logs.debug (fun m -> m "[Yapi]: GET on %s" (Selector.to_string selector));
+    Yaks_zutils.squery_values t.zenoh selector
 
-    let update ?quorum path value t =
-      ignore quorum;
-      let path = absolute_path path t in
-      Logs.debug (fun m -> m "[Yapi]: UPDATE on %s" (Path.to_string path));
-      Yaks_zutils.write_update t.zenoh path value
+  let put ?quorum path value t =
+    ignore quorum;
+    let path = absolute_path path t in
+    Logs.debug (fun m -> m "[Yapi]: PUT on %s" (Path.to_string path));
+    Yaks_zutils.write_put t.zenoh path value
 
-    let remove ?quorum path t =
-      ignore quorum;
-      let path = absolute_path path t in
-      Logs.debug (fun m -> m "[Yapi]: REMOVE on %s" (Path.to_string path));
-      Yaks_zutils.write_remove t.zenoh path
+  let update ?quorum path value t =
+    ignore quorum;
+    let path = absolute_path path t in
+    Logs.debug (fun m -> m "[Yapi]: UPDATE on %s" (Path.to_string path));
+    Yaks_zutils.write_update t.zenoh path value
 
-    let subscribe ?listener selector t =
-      let selector = absolute_selector selector t in
-      Logs.debug (fun m -> m "[Yapi]: SUB on %s" (Selector.to_string selector));
-      let listener = match listener with
-        | Some l -> Some (fun path changes -> List.map (fun change -> (path, change)) changes |> l)
-        | None -> None
+  let remove ?quorum path t =
+    ignore quorum;
+    let path = absolute_path path t in
+    Logs.debug (fun m -> m "[Yapi]: REMOVE on %s" (Path.to_string path));
+    Yaks_zutils.write_remove t.zenoh path
+
+  let subscribe ?listener selector t =
+    let selector = absolute_selector selector t in
+    Logs.debug (fun m -> m "[Yapi]: SUB on %s" (Selector.to_string selector));
+    let listener = match listener with
+      | Some l -> Some (fun path changes -> List.map (fun change -> (path, change)) changes |> l)
+      | None -> None
+    in
+    Yaks_zutils.subscribe t.zenoh ?listener selector
+
+  let unsubscribe subid t =
+    Logs.debug (fun m -> m "[Yapi]: UNSUB");
+    Yaks_zutils.unsubscribe t.zenoh subid
+
+  let zenoh_eval_prefix = "+"
+  let zenoh_eval_prefix_path = Path.of_string "+"
+
+  let register_eval path (eval_callback:eval_callback_t) t =
+    let path = absolute_path path t in
+    Logs.debug (fun m -> m "[Yapi]: REG_EVAL %s" (Path.to_string path));
+    (* NB:
+      - Currently an eval is represented with a storage, once zenoh will support something like evals, we'll
+        transition to that abstraction to avoid bu construction the progagation of spurious values.
+      - The Zenoh storage selector for eval is the eval's path prefixed with '+'
+    *)
+    let zenoh_eval_path = zenoh_eval_prefix ^ (Path.to_string path) in
+    let on_query resname predicate =
+      Logs.debug (fun m -> m "[Yapi]: Handling remote Zenoh query on eval '%s' for '%s?%s'" (Path.to_string path) resname predicate);
+      eval_callback path (Properties.of_string predicate)
+      >|= fun value ->
+        let encoding = Some(Yaks_zutils.encoding_to_flag value) in
+        let data_info = { Ztypes.empty_data_info with encoding; ts=None } in
+        let buf = Abuf.create ~grow:8192 8192 in
+        let () = Yaks_zutils.encode_value value buf in
+        [(zenoh_eval_path, buf, data_info)]
+    in
+    Guard.guarded t.evals
+      @@ fun evals ->
+      let%lwt () = match EvalMap.find_opt path evals with
+        | Some storage -> Zenoh.unstore t.zenoh storage
+        | None -> Lwt.return_unit
       in
-      Yaks_zutils.subscribe t.zenoh ?listener selector
+      let%lwt storage = Zenoh.store t.zenoh zenoh_eval_path (fun _ _ -> Lwt.return_unit) on_query in
+    Guard.return () (EvalMap.add path storage evals)
 
-    let unsubscribe subid t =
-      Logs.debug (fun m -> m "[Yapi]: UNSUB");
-      Yaks_zutils.unsubscribe t.zenoh subid
-
-    let zenoh_eval_prefix = "+"
-    let zenoh_eval_prefix_path = Path.of_string "+"
-
-    let register_eval path (eval_callback:eval_callback_t) t =
-      let path = absolute_path path t in
-      Logs.debug (fun m -> m "[Yapi]: REG_EVAL %s" (Path.to_string path));
-      (* NB:
-        - Currently an eval is represented with a storage, once zenoh will support something like evals, we'll
-          transition to that abstraction to avoid bu construction the progagation of spurious values.
-        - The Zenoh storage selector for eval is the eval's path prefixed with '+'
-      *)
-      let zenoh_eval_path = zenoh_eval_prefix ^ (Path.to_string path) in
-      let on_query resname predicate =
-        Logs.debug (fun m -> m "[Yapi]: Handling remote Zenoh query on eval '%s' for '%s?%s'" (Path.to_string path) resname predicate);
-        eval_callback path (Properties.of_string predicate)
-        >|= fun value ->
-          let encoding = Some(Yaks_zutils.encoding_to_flag value) in
-          let data_info = { Ztypes.empty_data_info with encoding; ts=None } in
-          let buf = Abuf.create ~grow:8192 8192 in
-          let () = Yaks_zutils.encode_value value buf in
-          [(zenoh_eval_path, buf, data_info)]
+  let unregister_eval path t =
+    let path = absolute_path path t in
+    Logs.debug (fun m -> m "[Yapi]: UNREG_EVAL %s" (Path.to_string path));
+    Guard.guarded t.evals
+      @@ fun evals ->
+      let%lwt () = match EvalMap.find_opt path evals with
+        | Some storage -> Zenoh.unstore t.zenoh storage
+        | None -> Lwt.return_unit
       in
-      Guard.guarded t.evals
-        @@ fun evals ->
-        let%lwt () = match EvalMap.find_opt path evals with
-          | Some storage -> Zenoh.unstore t.zenoh storage
-          | None -> Lwt.return_unit
-        in
-        let%lwt storage = Zenoh.store t.zenoh zenoh_eval_path (fun _ _ -> Lwt.return_unit) on_query in
-      Guard.return () (EvalMap.add path storage evals)
+    Guard.return () (EvalMap.remove path evals)
 
-    let unregister_eval path t =
-      let path = absolute_path path t in
-      Logs.debug (fun m -> m "[Yapi]: UNREG_EVAL %s" (Path.to_string path));
-      Guard.guarded t.evals
-        @@ fun evals ->
-        let%lwt () = match EvalMap.find_opt path evals with
-          | Some storage -> Zenoh.unstore t.zenoh storage
-          | None -> Lwt.return_unit
-        in
-      Guard.return () (EvalMap.remove path evals)
-
-    let eval ?multiplicity ?encoding ?fallback selector t =
-      ignore multiplicity; ignore encoding; ignore fallback;
-      let selector = absolute_selector selector t in
-      let selector = Selector.add_prefix ~prefix: zenoh_eval_prefix_path selector in
-      Logs.debug (fun m -> m "[Yapi]: EVAL on %s" (Selector.to_string selector));
-      Yaks_zutils.query_values t.zenoh selector
+  let eval ?multiplicity ?encoding ?fallback selector t =
+    ignore multiplicity; ignore encoding; ignore fallback;
+    let selector = absolute_selector selector t in
+    let selector = Selector.add_prefix ~prefix: zenoh_eval_prefix_path selector in
+    Logs.debug (fun m -> m "[Yapi]: EVAL on %s" (Selector.to_string selector));
+    Yaks_zutils.query_values t.zenoh selector
 
 end
 
@@ -228,8 +258,8 @@ let get_id t = t.yaksid
 let workspace path t : Workspace.t Lwt.t =
   (* TODO in sync with Zenoh: register path as a resource and use resource_id + relative_path in workspace *)
   let w : Workspace.t = 
-    { zenoh = t.zenoh 
-    ; path
+    { path
+    ; zenoh = t.zenoh
     ; evals = Guard.create @@ EvalMap.empty }
   in
   Lwt.return w
