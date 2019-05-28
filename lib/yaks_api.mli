@@ -162,6 +162,7 @@ module Admin : sig
   val add_storage : ?yaks:yid -> stid -> ?backend:beid -> properties -> t -> unit Lwt.t
   (** [add_storage yaks stid beid p a] adds in the Yaks service with identifier [yaks] (by default it will be the service this API is connected to)
       and using the backend with identifier [beid] a storage with [stid] as identifier and [p] as properties.
+      Note that "selector" is a mandatory property.
       If [beid] is not specified, Yaks will automatically find a backend that can handle the specified properties. *)
 
   val get_storages : ?yaks:yid -> ?backend:beid -> t -> (stid * properties) list Lwt.t

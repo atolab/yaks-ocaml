@@ -47,7 +47,7 @@ module Workspace = struct
   type t =
     { path: Path.t
     ; zenoh : Zenoh.t
-    ; evals: Zenoh.storage EvalMap.t Guard.t}
+    ; evals: Zenoh.storage EvalMap.t Guard.t }
 
   let absolute_path path t =
     if Path.is_relative path then Path.add_prefix ~prefix:t.path path else path
@@ -76,7 +76,7 @@ module Workspace = struct
   let put ?quorum path value t =
     ignore quorum;
     let path = absolute_path path t in
-    Logs.debug (fun m -> m "[Yapi]: PUT on %s" (Path.to_string path));
+    Logs.debug (fun m -> m "[Yapi]: PUT on %s : %s" (Path.to_string path) (Value.to_string value));
     Yaks_zutils.write_put t.zenoh path value
 
   let update ?quorum path value t =
@@ -238,14 +238,14 @@ end
 
 type t =
   { zenoh : Zenoh.t
-  ; yaksid : yid
+  ; yaksid : string
   ; properties : properties }
 
 let login endpoint properties =
   let%lwt zenoh = Zenoh.zopen endpoint in
   let zinfo = Zenoh.info zenoh in
   match Properties.get "peer_pid" zinfo with
-  | Some zid -> let yaksid = Yaks_zutils.zenohid_to_yaksid zid in  Lwt.return { zenoh; yaksid; properties; }
+  | Some zid -> Lwt.return { zenoh; yaksid=zid; properties; }
   | None -> raise @@ Yaks_common_errors.YException (`InternalError (`Msg ("Connected Zenohd doesn't provide the property 'peer_pid'")))
 
 let logout t =
