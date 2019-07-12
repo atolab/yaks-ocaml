@@ -118,7 +118,9 @@ module Workspace = struct
     let zenoh_eval_path = zenoh_eval_prefix ^ (Path.to_string path) in
     let on_query resname predicate =
       Logs.debug (fun m -> m "[Yapi]: Handling remote Zenoh query on eval '%s' for '%s?%s'" (Path.to_string path) resname predicate);
-      eval_callback path (Properties.of_string predicate)
+      let s = Selector.of_string ((Path.to_string path)^"?"^predicate) in
+      let props = Option.map (Selector.properties s) Properties.of_string in
+      eval_callback path (Option.get_or_default props Properties.empty)
       >|= fun value ->
         let encoding = Some(Yaks_zutils.encoding_to_flag value) in
         let data_info = { Ztypes.empty_data_info with encoding; ts=None } in
