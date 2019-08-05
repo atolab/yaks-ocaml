@@ -176,9 +176,9 @@ module Admin = struct
     let sel = Printf.sprintf "/@/%s/backend/*" yaks in
     Workspace.get ~quorum:1 (Selector.of_string sel) t.admin
     >|= List.map (fun (p, v) ->
-      let feid = Astring.with_range ~first:(String.length sel-2) (Path.to_string p) in
+      let beid = Astring.with_range ~first:(String.length sel-1) (Path.to_string p) in
       let prop = properties_of_value v in
-      (feid, prop))
+      (beid, prop))
 
   let get_backend ?yaks beid t =
     let yaks = match yaks with | Some id -> id | None -> t.yaksid in
@@ -206,9 +206,9 @@ module Admin = struct
     >|= List.map (fun (p, v) ->
       let path = Path.to_string p in
       let last_slash_idx = Astring.find ~rev:true (fun c -> c = '/') path |> Option.get in
-      let beid = Astring.with_range ~first:(last_slash_idx+1) path in
+      let stoid = Astring.with_range ~first:(last_slash_idx+1) path in
       let prop = properties_of_value v in
-      (beid, prop))
+      (stoid, prop))
 
   let get_storage ?yaks stid t =
     let yaks = match yaks with | Some id -> id | None -> t.yaksid in
