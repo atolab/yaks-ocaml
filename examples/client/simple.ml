@@ -31,7 +31,7 @@ let eval_callback2 path props =
 
 
 let print_admin_space workspace yaksid =
-  let sel = ~/*("/@/"^yaksid^"/**") in
+  let sel = ~/*("/@/"^yaksid^"/plugins/yaks/**") in
   Yaks.Workspace.get sel workspace
   >|= List.sort (fun (p,_) (p',_) -> Yaks.Path.compare p p')
   >|= fun pvs ->

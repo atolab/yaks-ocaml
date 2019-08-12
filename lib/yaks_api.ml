@@ -168,12 +168,12 @@ module Admin = struct
 
   let add_backend ?yaks beid props t =
     let yaks = match yaks with | Some id -> id | None -> t.yaksid in
-    let path = Printf.sprintf "/@/%s/backend/%s" yaks beid in
+    let path = Printf.sprintf "/@/%s/plugins/yaks/backend/%s" yaks beid in
     Workspace.put ~quorum:1 (Path.of_string path) (Value.PropertiesValue props) t.admin
 
   let get_backends ?yaks t =
     let yaks = match yaks with | Some id -> id | None -> t.yaksid in
-    let sel = Printf.sprintf "/@/%s/backend/*" yaks in
+    let sel = Printf.sprintf "/@/%s/plugins/yaks/backend/*" yaks in
     Workspace.get ~quorum:1 (Selector.of_string sel) t.admin
     >|= List.map (fun (p, v) ->
       let beid = Astring.with_range ~first:(String.length sel-1) (Path.to_string p) in
@@ -182,26 +182,26 @@ module Admin = struct
 
   let get_backend ?yaks beid t =
     let yaks = match yaks with | Some id -> id | None -> t.yaksid in
-    let sel = Printf.sprintf "/@/%s/backend/%s" yaks beid in
+    let sel = Printf.sprintf "/@/%s/plugins/yaks/backend/%s" yaks beid in
     Workspace.get ~quorum:1 (Selector.of_string sel) t.admin
     >|= (fun l -> Option.map (List.nth_opt l 0) (fun (_,v) -> properties_of_value v))
 
   let remove_backend ?yaks beid t =
     let yaks = match yaks with | Some id -> id | None -> t.yaksid in
-    let path = Printf.sprintf "/@/%s/backend/%s" yaks beid in
+    let path = Printf.sprintf "/@/%s/plugins/yaks/backend/%s" yaks beid in
     Workspace.remove ~quorum:1 (Path.of_string path) t.admin
 
 
   let add_storage ?yaks stid ?backend props t =
     let yaks = match yaks with | Some id -> id | None -> t.yaksid in
     let beid = Option.get_or_default backend "auto" in
-    let path = Printf.sprintf "/@/%s/backend/%s/storage/%s" yaks beid stid in
+    let path = Printf.sprintf "/@/%s/plugins/yaks/backend/%s/storage/%s" yaks beid stid in
     Workspace.put ~quorum:1 (Path.of_string path) (Value.PropertiesValue props) t.admin
 
   let get_storages ?yaks ?backend t =
     let yaks = match yaks with | Some id -> id | None -> t.yaksid in
     let beid = Option.get_or_default backend "*" in
-    let sel = Printf.sprintf "/@/%s/backend/%s/storage/*" yaks beid in
+    let sel = Printf.sprintf "/@/%s/plugins/yaks/backend/%s/storage/*" yaks beid in
     Workspace.get ~quorum:1 (Selector.of_string sel) t.admin
     >|= List.map (fun (p, v) ->
       let path = Path.to_string p in
@@ -212,13 +212,13 @@ module Admin = struct
 
   let get_storage ?yaks stid t =
     let yaks = match yaks with | Some id -> id | None -> t.yaksid in
-    let sel = Printf.sprintf "/@/%s/backend/*/storage/%s" yaks stid in
+    let sel = Printf.sprintf "/@/%s/plugins/yaks/backend/*/storage/%s" yaks stid in
     Workspace.get ~quorum:1 (Selector.of_string sel) t.admin
     >|= (fun l -> Option.map (List.nth_opt l 0) (fun (_,v) -> properties_of_value v))
 
   let remove_storage ?yaks stid t =
     let yaks = match yaks with | Some id -> id | None -> t.yaksid in
-    let sel = Printf.sprintf "/@/%s/backend/*/storage/%s" yaks stid in
+    let sel = Printf.sprintf "/@/%s/plugins/yaks/backend/*/storage/%s" yaks stid in
     let path = 
       Workspace.get ~quorum:1 (Selector.of_string sel) t.admin
       >|= (fun l -> Option.map (List.nth_opt l 0) (fun (p,_) -> p))
