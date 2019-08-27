@@ -10,16 +10,17 @@ version:"0.2.7"
 license: "Apache-2.0"
 
 build: [
+["dune" "subst"] {pinned}
   ["dune" "build" "-p" name "-j" jobs]
 ]
 
 
 depends: [
   "dune"
-  "fmt" 
-  "logs" 
-  "lwt" 
-  "ppx_deriving" 
+  "fmt"
+  "logs"
+  "lwt"
+  "ppx_deriving"
   "lwt_ppx"
   "apero-core" {>= "0.4.4"}
   "yaks-common" {= "0.2.7"}
