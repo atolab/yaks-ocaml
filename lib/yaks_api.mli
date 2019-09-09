@@ -125,19 +125,6 @@ module Workspace : sig
   (** [register_eval path ws] unregisters an previously registered evaluation function under the give [path].
     The [path] can be absolute or relative to the workspace [ws]. *)
 
-  val eval : ?multiplicity:int -> ?encoding:Value.encoding -> ?fallback:transcoding_fallback -> Selector.t -> t -> (Path.t * Value.t) list Lwt.t
-  (** [eval multiplicity encoding fallback selector ws] requests the evaluation of registered evals whose registration 
-    {e path} matches the given [selector].
-    
-    If several evaluation function are registerd with the same path (by different Yaks clients), then Yaks will call N functions 
-    where N=[multiplicity] (default value is 1).
-    Note that in such case, the returned {e \{ <path,value> \} } list will contain N time each matching path with the different 
-    values returned by each evaluation.
-    The [encoding] indicates the expected encoding of the resulting values. If the original values have a different encoding, 
-    Yaks will try to transcode them into the expected encoding.
-    By default, if no encoding is specified, the values are returned with their original encoding.
-    The [fallback] indicates the action that Yakss will perform if the transcoding of a value fails. *)
-
 end
 
 module Admin : sig

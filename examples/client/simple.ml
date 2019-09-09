@@ -97,7 +97,7 @@ let main argv =
 
   let%lwt _ = Lwt_io.printf "\n<<<< [APP] Calling eval %s \n" "/afos/0/test_eval" in
   let%lwt _ = Lwt_io.read_line Lwt_io.stdin in
-  Yaks.Workspace.eval ~/*"test_eval" workspace
+  Yaks.Workspace.get ~/*"test_eval" workspace
   >>= fun data -> List.iter (
     fun (k,v) -> 
       ignore @@ Lwt_io.printf ">>>> [APP] K %s - V: %s\n"  (Yaks.Path.to_string k) (Yaks.Value.to_string v);
@@ -106,7 +106,7 @@ let main argv =
   
   let%lwt _ = Lwt_io.printf "\n<<<< [APP] Calling eval %s with name=Bob\n" "/afos/0/test_eval2" in
   let%lwt _ = Lwt_io.read_line Lwt_io.stdin in
-  Yaks.Workspace.eval ~/*"test_eval2?(name=Bob)" workspace
+  Yaks.Workspace.get ~/*"test_eval2?(name=Bob)" workspace
   >>= fun data -> List.iter (
     fun (k,v) -> 
       ignore @@ Lwt_io.printf ">>>> [APP] K %s - V: %s\n"  (Yaks.Path.to_string k) (Yaks.Value.to_string v);
@@ -115,7 +115,7 @@ let main argv =
 
   let%lwt _ = Lwt_io.printf "\n<<<< [APP] Calling eval %s with name=Carl\n" "/afos/0/test_*" in
   let%lwt _ = Lwt_io.read_line Lwt_io.stdin in
-  let%lwt _ = Yaks.Workspace.eval ~/*"test_*?(name=Carl)" workspace
+  let%lwt _ = Yaks.Workspace.get ~/*"test_*?(name=Carl)" workspace
   >>= fun data -> List.iter (
     fun (k,v) -> 
       ignore @@ Lwt_io.printf ">>>> [APP] K %s - V: %s\n"  (Yaks.Path.to_string k) (Yaks.Value.to_string v);

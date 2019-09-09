@@ -104,20 +104,13 @@ module Workspace = struct
     Logs.debug (fun m -> m "[Yapi]: UNSUB");
     Yaks_zutils.unsubscribe t.zenoh subid
 
-  let zenoh_eval_prefix = "+"
-  let zenoh_eval_prefix_path = Path.of_string "+"
 
   let register_eval path (eval_callback:eval_callback_t) t =
     let path = absolute_path path t in
-    Logs.debug (fun m -> m "[Yapi]: REG_EVAL %s" (Path.to_string path));
-    (* NB:
-      - Currently an eval is represented with a storage, once zenoh will support something like evals, we'll
-        transition to that abstraction to avoid bu construction the progagation of spurious values.
-      - The Zenoh storage selector for eval is the eval's path prefixed with '+'
-    *)
-    let zenoh_eval_path = zenoh_eval_prefix ^ (Path.to_string path) in
+    let zpath = Path.to_string path in
+    Logs.debug (fun m -> m "[Yapi]: REG_EVAL %s" zpath);
     let on_query resname predicate =
-      Logs.debug (fun m -> m "[Yapi]: Handling remote Zenoh query on eval '%s' for '%s?%s'" (Path.to_string path) resname predicate);
+      Logs.debug (fun m -> m "[Yapi]: Handling remote Zenoh query on eval '%s' for '%s?%s'" zpath resname predicate);
       let s = Selector.of_string ((Path.to_string path)^"?"^predicate) in
       let props = Option.map (Selector.properties s) Properties.of_string in
       eval_callback path (Option.get_or_default props Properties.empty)
@@ -126,7 +119,7 @@ module Workspace = struct
         let data_info = { Ztypes.empty_data_info with encoding; ts=None } in
         let buf = Abuf.create ~grow:8192 8192 in
         let () = Yaks_zutils.encode_value value buf in
-        [(zenoh_eval_path, buf, data_info)]
+        [(zpath, buf, data_info)]
     in
     Guard.guarded t.evals
       @@ fun evals ->
@@ -134,7 +127,7 @@ module Workspace = struct
         | Some storage -> Zenoh.unstore t.zenoh storage
         | None -> Lwt.return_unit
       in
-      let%lwt storage = Zenoh.store t.zenoh zenoh_eval_path (fun _ _ -> Lwt.return_unit) on_query in
+      let%lwt storage = Zenoh.store t.zenoh zpath (fun _ _ -> Lwt.return_unit) on_query in
     Guard.return () (EvalMap.add path storage evals)
 
   let unregister_eval path t =
@@ -147,13 +140,6 @@ module Workspace = struct
         | None -> Lwt.return_unit
       in
     Guard.return () (EvalMap.remove path evals)
-
-  let eval ?multiplicity ?encoding ?fallback selector t =
-    ignore multiplicity; ignore encoding; ignore fallback;
-    let selector = absolute_selector selector t in
-    let selector = Selector.add_prefix ~prefix: zenoh_eval_prefix_path selector in
-    Logs.debug (fun m -> m "[Yapi]: EVAL on %s" (Selector.to_string selector));
-    Yaks_zutils.query_values t.zenoh selector
 
 end
 
