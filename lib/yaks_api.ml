@@ -39,15 +39,13 @@ module RegisteredPath = struct
     ignore quorum;
     Logs.debug (fun m -> m "[Yapi]: REMOVE (stream) on %s" (Path.to_string t.path));
     Yaks_zutils.stream_remove t.pub
-
-
 end
 
 module Workspace = struct
   type t =
     { path: Path.t
     ; zenoh : Zenoh.t
-    ; evals: Zenoh.storage EvalMap.t Guard.t }
+    ; evals: Zenoh.eval EvalMap.t Guard.t }
 
   let absolute_path path t =
     if Path.is_relative path then Path.add_prefix ~prefix:t.path path else path
@@ -124,11 +122,11 @@ module Workspace = struct
     Guard.guarded t.evals
       @@ fun evals ->
       let%lwt () = match EvalMap.find_opt path evals with
-        | Some storage -> Zenoh.unstore t.zenoh storage
+        | Some eval -> Zenoh.unevaluate t.zenoh eval
         | None -> Lwt.return_unit
       in
-      let%lwt storage = Zenoh.store t.zenoh zpath (fun _ _ -> Lwt.return_unit) on_query in
-    Guard.return () (EvalMap.add path storage evals)
+      let%lwt eval = Zenoh.evaluate t.zenoh zpath on_query in
+    Guard.return () (EvalMap.add path eval evals)
 
   let unregister_eval path t =
     let path = absolute_path path t in
@@ -136,7 +134,7 @@ module Workspace = struct
     Guard.guarded t.evals
       @@ fun evals ->
       let%lwt () = match EvalMap.find_opt path evals with
-        | Some storage -> Zenoh.unstore t.zenoh storage
+        | Some eval -> Zenoh.unevaluate t.zenoh eval
         | None -> Lwt.return_unit
       in
     Guard.return () (EvalMap.remove path evals)
