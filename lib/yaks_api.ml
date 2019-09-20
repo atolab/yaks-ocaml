@@ -115,8 +115,7 @@ module Workspace = struct
       >|= fun value ->
         let encoding = Some(Yaks_zutils.encoding_to_flag value) in
         let data_info = { Ztypes.empty_data_info with encoding; ts=None } in
-        let buf = Abuf.create ~grow:8192 8192 in
-        let () = Yaks_zutils.encode_value value buf in
+        let buf = Yaks_zutils.encode_value value in
         [(zpath, buf, data_info)]
     in
     Guard.guarded t.evals
