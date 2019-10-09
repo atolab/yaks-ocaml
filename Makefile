@@ -1,37 +1,16 @@
-.PHONY: lib examples all clean test doc
-
-EXES=lib/yaks_toplevel.exe examples/client/simple.exe examples/throughput/ythrp.exe examples/throughput/ythr_put.exe  examples/throughput/ythr_sub.exe examples/throughput/ythrg.exe examples/latency/ylatp.exe examples/latency/ylatg.exe examples/latency/ylat_ping.exe  examples/latency/ylat_pong.exe
-
-BUILD_LIB=dune build
-BUILD_EXAMPLES=dune build ${EXES}
-
-CLEAN= dune clean
-TEST=dune runtest -j1 --no-buffer
-DOC=dune build --dev @doc
-INSTALL=dune install
-
+.PHONY: all test doc install clean
 
 all:
-	make lib
-	make examples
-
-
-lib:
-
-	${BUILD_LIB}
-
-examples:
-	${BUILD_EXAMPLES}
-
+	dune build --display=short @all
 
 test:
-	${TEST}
+	dune runtest -j1 --no-buffer
 
 doc:
-	${DOC}
+	dune build --dev @doc
 
 install:
-	${INSTALL}
+	dune install
 
 clean:
-	${CLEAN}
+	dune clean
